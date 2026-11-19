@@ -16,13 +16,14 @@
   <section class="feedback-card" aria-labelledby="feedback-title">
     <h1 id="feedback-title">Pilot feedback</h1>
     <p>Two short answers about your week with Quod.</p>
-    <form id="pilot-feedback">
+    <form id="pilot-feedback" autocomplete="off">
       <label for="helped">What helped you finish?</label>
-      <textarea id="helped" name="helped" rows="4" maxlength="1200" required></textarea>
+      <textarea id="helped" rows="4" maxlength="1200" required></textarea>
       <label for="barrier">What got in the way?</label>
-      <textarea id="barrier" name="barrier" rows="4" maxlength="1200" required></textarea>
+      <textarea id="barrier" rows="4" maxlength="1200" required></textarea>
       <p class="feedback-hint">Keep the answers about using Quod. Leave out unpublished research and other people’s names.</p>
-      <button class="button secondary" type="submit">Prepare feedback email</button>
+      <button class="button secondary" type="submit" disabled>Prepare feedback email</button>
+      <noscript><p><a href="mailto:Andrea.Taccani@mathematik.uni-regensburg.de?subject=Quod%20one-week%20pilot%20feedback">Email the pilot organizer</a></p></noscript>
     </form>
     <div class="feedback-result" id="feedback-result" hidden>
       <h2 id="draft-title" tabindex="-1">Your email draft</h2>

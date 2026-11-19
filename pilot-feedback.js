@@ -6,12 +6,13 @@ const draft=document.querySelector('#feedback-draft');
 const status=document.querySelector('#feedback-status');
 const email=document.querySelector('#feedback-email');
 const recipient=document.querySelector('#feedback-recipient').getAttribute('href');
+const helpedInput=document.querySelector('#helped');
+const barrierInput=document.querySelector('#barrier');
 
 feedback.addEventListener('submit',event=>{
   event.preventDefault();
-  const data=new FormData(feedback);
-  const helped=String(data.get('helped')||'').trim();
-  const barrier=String(data.get('barrier')||'').trim();
+  const helped=helpedInput.value.trim();
+  const barrier=barrierInput.value.trim();
   if(!helped||!barrier){
     status.textContent='Enter a short answer to both questions.';
     return;
@@ -24,6 +25,7 @@ feedback.addEventListener('submit',event=>{
   result.hidden=false;
   document.querySelector('#draft-title').focus();
 });
+feedback.querySelector('button[type=submit]').disabled=false;
 feedback.addEventListener('input',()=>{
   if(result.hidden)return;
   result.hidden=true;
