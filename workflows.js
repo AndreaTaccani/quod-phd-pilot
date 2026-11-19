@@ -239,9 +239,14 @@ function scheduleReturn(data, reference) {
     if(existing?.status!=='Next'||existing.archivedAt) throw Error('Choose an action that is still open.');
     if(reference&&existing.role!==roleOfTask(reference)) throw Error('Choose an action within the current role.');
     if(existing.title===data.next){
-      ensureSlot(existing,planDate);
+      const goal=taskKind(existing)==='deep'?{
+        doneLooks:data.returndoneLooks??existing.doneLooks,
+        obstacle:data.returnobstacle??existing.obstacle,
+        response:data.returnresponse??existing.response
+      }:{};
+      ensureSlot({...existing,...goal},planDate);
       if(existing.primaryDay!==planDate) existing.primaryDay='';
-      Object.assign(existing,{planDate,previousPlanDate:planDate?'':data.date,startTime:data.time,returnCue:data.cue,updated:Date.now()});
+      Object.assign(existing,goal,{planDate,previousPlanDate:planDate?'':data.date,startTime:data.time,returnCue:data.cue,updated:Date.now()});
       touchTask(existing);clearDecision(existing);
       return existing;
     }
@@ -531,6 +536,11 @@ function supportChange(target) {
     if(plannedDate)plannedDate.value=t?.planDate>=today()?t.planDate:suggestedReturnDay();
     if(time)time.value=t?.startTime||suggestedReturnTime();
     if(cue)cue.value=t?.returnCue||'';
+    for(const [key] of goalPrompts){
+      const input=$('[name="return'+key+'"]',target.form);
+      if(input) input.value=t?(t[key]??''):input.defaultValue;
+    }
+    clearGoalError(target.form);
   }
   if(target.name==='frictionType'){
     const step=$('[name=smallStep]',modal);

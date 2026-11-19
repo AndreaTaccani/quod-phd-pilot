@@ -3,15 +3,32 @@
 const smallLimit=25;
 const dayKinds=[['deep','Deep research goal'],['small','Small maintenance task']];
 const dayLimits={deep:1,small:2};
+const goalPrompts=[
+  ['doneLooks','What does done look like?','One paragraph states the claim and its assumptions','Describe what done looks like for this goal.'],
+  ['obstacle','What is most likely to stall you?','I keep opening papers beyond the chapter scope','Name one obstacle that might stall this goal.'],
+  ['response','What is your five-minute move if that happens?','I’ll write one question the next paper needs to answer','Enter a five-minute response you can try if the obstacle comes up.']
+];
+const goalAnswer=value=>typeof value==='string'&&Boolean(value.trim());
+const missingGoalPrompt=t=>goalPrompts.find(([key])=>!goalAnswer(t[key]));
 const onBoard=t=>Boolean(t&&!t.archivedAt&&['Next','Done'].includes(t.status));
 const taskKind=t=>['deep','small'].includes(t?.planKind)?t.planKind:(t?.role==='Research'?'deep':'small');
-const haveGoalPlan=t=>Boolean(String(t.doneLooks||'').trim()&&String(t.obstacle||'').trim()&&actionText(t.response));
+const haveGoalPlan=t=>!missingGoalPrompt(t);
 const canWork=t=>Boolean(onBoard(t)&&t.status==='Next'&&t.planDate===today());
 const focusableTask=t=>canWork(t)&&(!researchLock||taskKind(t)==='deep');
 const touchTask=(t,day=today())=>{t.lastTouched=day;};
 const workdayStamp=(value)=>typeof value==='number'&&Number.isFinite(value)?localDate(new Date(value)):'';
+class GoalPlanError extends Error {
+  constructor(field,message) {
+    super(message);
+    this.field=field;
+  }
+}
 function checkGoalPlan(t) {
-  if(!haveGoalPlan(t)) throw Error('Describe what done looks like, what may stall you, and a concrete five-minute response.');
+  const missing=missingGoalPrompt(t);
+  if(missing){
+    const [field,,,message]=missing;
+    throw new GoalPlanError(field,message);
+  }
 }
 function checkSlotFit(t) {
   validatePlan(t.title);
@@ -83,22 +100,47 @@ function slotRows() {
 function goalFields(item, options={}) {
   const {prefix='',title='Plan the goal',open=true}=options;
   return '<fieldset class="goal-fields" data-goal-fields'+(open?'':' hidden')+'><legend>'+e(title)+'</legend>'+
-    field('What does done look like?',prefix+'doneLooks',item.doneLooks,{placeholder:'One paragraph states the claim and its assumptions',maxLength:250})+
-    field('What is most likely to stall you?',prefix+'obstacle',item.obstacle,{placeholder:'I keep opening papers beyond the chapter scope',maxLength:250})+
-    field('What is your five-minute move if that happens?',prefix+'response',item.response,{placeholder:'Write one question the next paper needs to answer',maxLength:250})+'</fieldset>';
+    goalPrompts.map(([key,label,placeholder])=>field(label,prefix+key,item[key],{placeholder,maxLength:250})).join('')+
+    '<p class="error-text" id="goal-field-error" role="alert" hidden></p></fieldset>';
+}
+function clearGoalError(form) {
+  const notice=$('#goal-field-error',form);
+  if(!notice||notice.hidden) return;
+  const input=$('[aria-describedby="goal-field-error"]',form);
+  input?.removeAttribute('aria-invalid');
+  input?.removeAttribute('aria-describedby');
+  notice.hidden=true;
+}
+function showGoalError(form,error) {
+  const goal=$('[data-goal-fields]',form);
+  const input=goal&&$('input[name="'+error.field+'"],input[name="return'+error.field+'"]',goal);
+  if(!input||goal.hidden) return false;
+  const notice=$('#goal-field-error',goal);
+  const details=input.closest('details');
+  if(details) details.open=true;
+  input.closest('label').after(notice);
+  input.setAttribute('aria-invalid','true');
+  input.setAttribute('aria-describedby',notice.id);
+  notice.textContent=error.message;
+  notice.hidden=false;
+  input.focus();
+  return true;
 }
 function syncTaskGoal(form){
   const kind=$('[name=planKind]',form);
   if(!kind) return;
   const goal=$('[data-goal-fields]',form);
-  if(goal) goal.hidden=kind.value!=='deep';
+  if(goal){
+    goal.hidden=kind.value!=='deep';
+    if(goal.hidden) clearGoalError(form);
+  }
 }
 function parkedGoalFields(task){
   const kind=taskKind(task||{role:'Research'});
   return tick('horizon','Park in Horizon and keep the return cue',false)+
-    '<details class="details-options"><summary>Goal setup for a new research action</summary>'+
+    '<details class="details-options"><summary>Research goal setup</summary>'+
     '<div class="form-grid">'+select('Slot for a new action','returnKind',dayKinds,kind)+
-    goalFields(task||{},{prefix:'return',title:'If creating a deep research goal'})+'</div></details>';
+    goalFields(task||{},{prefix:'return',title:'For a deep research goal'})+'</div></details>';
 }
 
 const decisionText={

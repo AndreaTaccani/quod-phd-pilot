@@ -1228,7 +1228,17 @@ document.addEventListener('submit',event=>{
   const target=event.target;
   if(!target.matches('[data-form]')) return;
   event.preventDefault();
-  handleSubmit(target).catch(error=>formError(target,error.message||'Could not save this change.'));
+  const notice=$('[data-error]',target);
+  if(notice) notice.hidden=true;
+  clearGoalError(target);
+  handleSubmit(target).catch(error=>{
+    if(error instanceof GoalPlanError&&showGoalError(target,error)) return;
+    formError(target,error.message||'Could not save this change.');
+  });
+});
+document.addEventListener('input',event=>{
+  const input=event.target;
+  if(input.matches('[aria-describedby="goal-field-error"]')&&goalAnswer(input.value)) clearGoalError(input.form);
 });
 async function copyDigest() {
   const field=$('[name="digest-copy"]',modal);
