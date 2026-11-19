@@ -2,3 +2,12 @@
 
 .pilot-section{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.85fr);gap:clamp(16px,5vw,65px);margin-top:43px;padding:27px clamp(0px,3vw,32px) 0;border-top:1px solid #dce5da}.pilot-section h2{font-size:clamp(2rem,4vw,3.05rem);margin-bottom:8px}.pilot-section p{color:#526459;margin:8px 0}.pilot-data{background:#ecf2ea;border:1px solid #dfe8dd;border-radius:12px;padding:17px 19px;align-self:start}.pilot-data h3{font-size:1.5rem}.pilot-links{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:13px}
 .feedback-main{max-width:760px}.feedback-card{background:#fff;border:1px solid #dce5da;border-radius:15px;padding:clamp(15px,5vw,32px);margin:14px 0}.feedback-card h1{font-size:clamp(2.4rem,6vw,3.3rem);margin-bottom:9px}.feedback-card h2{font-size:clamp(1.7rem,4vw,2.3rem);margin-bottom:6px}.feedback-card>p,.feedback-result>p{color:#53645a}.feedback-card form{display:grid;gap:9px;justify-items:start;margin:20px 0}.feedback-card label{font-weight:650;color:#32483a}.feedback-card textarea{width:100%;resize:vertical;padding:9px 11px;border:1px solid #cfdccf;border-radius:8px;font:inherit;line-height:1.45;color:inherit}.feedback-card textarea:focus-visible{outline:2px solid #769784;outline-offset:2px}.feedback-card button{font-family:inherit;cursor:pointer}.feedback-hint{font-size:.89rem;color:#59675f}.feedback-result{border-top:1px solid #dce5da;padding-top:15px}.feedback-result label{display:block;margin:12px 0 4px;overflow-wrap:anywhere}.feedback-address a{font-weight:400;color:#21533c}.feedback-result .primary{background:#214638;color:white}.feedback-result .primary:hover{background:#17372d}.feedback-card #feedback-status{margin-top:8px}.feedback-card #feedback-status:empty{display:none}[hidden]{display:none!important}@media(max-width:710px){.pilot-section{grid-template-columns:1fr;margin-top:25px}}
+
+
+.site-actions{display:flex;align-items:center;gap:clamp(9px,2vw,22px)}
+.site-actions>a:first-child{color:#365846;font-size:.9rem;font-weight:650;text-underline-offset:.16em}
+.evidence-preview{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:39px 0 0;padding:19px clamp(15px,4vw,29px);border:1px solid #dce6da;border-radius:12px;background:#eef3eb}
+.evidence-preview h2{font-size:clamp(1.65rem,3vw,2.25rem);margin-bottom:6px}
+.evidence-preview p{color:#526459;max-width:66ch}
+.evidence-preview .button{flex-shrink:0}
+@media(max-width:625px){.evidence-preview{align-items:flex-start;flex-direction:column;margin-top:26px}}

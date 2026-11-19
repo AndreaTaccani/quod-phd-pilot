@@ -416,7 +416,8 @@ function wellbeingView() {
   return heading('Wellbeing','Make room for rest, perspective, and support.')+
     '<div class="grid grid-even">'+panel('A moment to reset',txt('What would you say to a colleague in this situation? What could be made clearer or lighter?','muted')+'<div class="inline wrap-inline compact">'+button('Reflect privately','reflect','','secondary','leaf')+button('Close the day','shutdown','','secondary','moon')+'</div>',{className:'subtle'})+
     panel('Reach out for support',txt('If workload, supervision, or stress keeps wearing you down, consider a trusted colleague, graduate program contact, ombudsperson, or campus counselling service.','muted')+'<div class="compact">'+button('Prepare a conversation','new','meetings','secondary','people')+'</div>',{className:'warm'})+'</div>'+
-    '<div class="section-gap"><h2>Research behind Quod</h2><p class="muted compact">These studies informed the design. Quod’s effects on wellbeing and productivity have yet to be evaluated.</p></div>'+
+    '<div class="section-gap"><h2>Research behind Quod</h2><p class="muted compact">These studies informed the design. Quod’s effects on wellbeing and productivity have yet to be evaluated.</p>'+
+    (staticPilotHost?'<p class="compact"><a class="btn secondary" href="./research.html">Browse the full research library</a></p>':'')+'</div>'+
     '<div class="grid grid-even section-gap">'+[...goalEvidence,...evidence,...workflowEvidence].map(x=>'<article class="panel source-card"><span class="eyebrow muted">'+e(x.label)+'</span><h3>'+e(x.title)+'</h3><p class="small">'+e(x.finding)+'</p><p class="small muted">'+e(x.design)+'</p><div class="inline wrap-inline">'+external(x.author,x.url)+(x.second?external(...x.second):'')+'</div></article>').join('')+'</div>';
 }
 function settingsView() {
