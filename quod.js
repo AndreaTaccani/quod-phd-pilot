@@ -8,8 +8,8 @@ const goalPrompts=[
   ['obstacle','What is most likely to stall you?','I keep opening papers beyond the chapter scope','Name one obstacle that might stall this goal.'],
   ['response','What is your five-minute move if that happens?','I’ll write one question the next paper needs to answer','Enter a five-minute response you can try if the obstacle comes up.']
 ];
-const goalAnswer=value=>typeof value==='string'&&Boolean(value.trim());
-const missingGoalPrompt=t=>goalPrompts.find(([key])=>!goalAnswer(t[key]));
+const hasText=value=>typeof value==='string'&&Boolean(value.trim());
+const missingGoalPrompt=t=>goalPrompts.find(([key])=>!hasText(t[key]));
 const onBoard=t=>Boolean(t&&!t.archivedAt&&['Next','Done'].includes(t.status));
 const taskKind=t=>['deep','small'].includes(t?.planKind)?t.planKind:(t?.role==='Research'?'deep':'small');
 const haveGoalPlan=t=>!missingGoalPrompt(t);
@@ -31,7 +31,7 @@ function checkGoalPlan(t) {
   }
 }
 function checkSlotFit(t) {
-  validatePlan(t.title);
+  requireActionText(t.title);
   const kind=taskKind(t);
   if(kind==='deep'){
     if(t.role!=='Research') throw Error('Use a maintenance slot for teaching, service, or personal work.');
@@ -167,7 +167,7 @@ function decisionSmaller(key) {
   const compost=t.decisionReason==='compost';
   const mins=compost?15:5;
   const label=compost?'Make a 15-minute starter':'Make this smaller';
-  const defaultTitle=actionText(t.response)?t.response:actionText(t.title)&&num(t.minutes)<=mins?t.title:'';
+  const defaultTitle=hasText(t.response)?t.response:hasText(t.title)&&num(t.minutes)<=mins?t.title:'';
   dialog(label,form('decision-smaller',txt(t.title,'plan-question')+
     field('Concrete starter action','title',defaultTitle,{required:true,placeholder:'Open the draft and outline one claim'})+
     select('Slot','planKind',t.role==='Research'?dayKinds:[dayKinds[1]],taskKind(t))+
@@ -239,7 +239,7 @@ async function quodSubmit(method,target,data){
       planKind:data.planKind,doneLooks:data.doneLooks,obstacle:data.obstacle,response:data.response,
       milestone:work.milestone,parent:work.id,pilotId:work.pilotId,fiveMinute:minutes===5,lastTouched:today(),
       date:work.date,reviewedDue:work.date<today()?work.date:'',details:'Starter for '+work.title};
-    validatePlan(next.title);
+    requireActionText(next.title);
     if(taskKind(next)==='deep'&&data.date)checkGoalPlan(next);
     ensureSlot(next,next.planDate,[work.id]);
     archiveWork(work,'Replaced by a starter');

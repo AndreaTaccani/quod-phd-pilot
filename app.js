@@ -527,7 +527,7 @@ function editDialog(collection,key='',preset={},isDraft=false) {
   if(key&&!existing) return;
   const item=isDraft?{...existing,...preset}:{...preset,...existing};
   const [label,headingLabel]=fieldNames[collection];
-  let fields=field(collection==='tasks'?'Concrete action':'Title','title',item.title,{required:true,placeholder:collection==='tasks'?'Outline three claims for Chapter 2':''});
+  let fields=field(collection==='tasks'?'Concrete action':'Title','title',item.title,{required:true,placeholder:collection==='tasks'?'Chapter 2 · three claims to outline':''});
   if(collection==='tasks') fields+=
     pair(select('Role','role',researchLock?['Research']:roles,item.role||'Research'),field('Estimated minutes','minutes',item.minutes??45,{type:'number',min:1,max:720}))+
     taskPlanningFields(item)+
@@ -606,7 +606,7 @@ function startTimer() {
   const selected=find('tasks',f.taskId);
   if(f.status==='idle'&&f.mode==='focus'){
     if(selected&&!focusableTask(selected)) selectedFocus('');
-    else if(selected&&!actionText(selected.title)) return resetPlanDialog(selected.id);
+    else if(selected&&!hasText(selected.title)) return resetPlanDialog(selected.id);
     else if(selected&&dueForReview(selected)) return frictionDialog(selected.id);
     const task=find('tasks',f.taskId);
     f.sessionTitle=task?.title||'Focus session';
@@ -716,7 +716,8 @@ function grantPrepValid(value) {
 function saveRecord(formElement,data) {
   const [collection,key]=split(formElement.dataset.key);
   const current=key?find(collection,key):null;
-  if(!String(data.title||'').trim()) throw Error('Enter a title.');
+  if(collection==='tasks') requireActionText(data.title);
+  else if(!hasText(data.title)) throw Error('Enter a title.');
   const item={...current,...data,id:key||id(),title:data.title.trim(),updated:Date.now()};
   if(collection==='tasks'){
     item.minutes=num(item.minutes);
@@ -1155,7 +1156,6 @@ async function handleSubmit(target) {
     const steps=actionLines(data.steps);
     if(!steps.length) throw Error('Add at least one next action.');
     if(steps.length>50) throw Error('Use up to 50 steps at a time.');
-    for(const title of steps) validatePlan(title);
     const date=data.date||(data.today==='on'?today():'');
     const actions=steps.map((title,index)=>({id:id(),title:title.slice(0,180),details:'Part of: '+data.goal,minutes:num(data.minutes),
       role:data.role,milestone:data.milestone,status:'Next',planDate:index===0?date:'',lastTouched:today(),
@@ -1169,7 +1169,7 @@ async function handleSubmit(target) {
     const task=find('tasks',data.task);
     if(task&&!canWork(task)){resetPlanDialog(task.id);return;}
     if(task&&dueForReview(task)){frictionDialog(task.id);return;}
-    if(task&&!actionText(task.title)){resetPlanDialog(task.id);return;}
+    if(task&&!hasText(task.title)){resetPlanDialog(task.id);return;}
     if(!selectedFocus(data.task,true)) throw Error('Finish the current session to change its tag.');
     closeDialog(); return commit('Focus selected.');
   }
@@ -1238,7 +1238,7 @@ document.addEventListener('submit',event=>{
 });
 document.addEventListener('input',event=>{
   const input=event.target;
-  if(input.matches('[aria-describedby="goal-field-error"]')&&goalAnswer(input.value)) clearGoalError(input.form);
+  if(input.matches('[aria-describedby="goal-field-error"]')&&hasText(input.value)) clearGoalError(input.form);
 });
 async function copyDigest() {
   const field=$('[name="digest-copy"]',modal);

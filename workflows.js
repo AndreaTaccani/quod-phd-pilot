@@ -31,21 +31,15 @@ function migrateTasks(tasks) {
     return record;
   });
 }
-function actionText(value) {
-  const title=String(value||'').trim();
-  const words=title.match(/[\p{L}\p{N}][\p{L}\p{N}-]*/gu)||[];
-  const actions=/^(?:add|align|analyse|analyze|annotate|answer|apply|archive|ask|audit|book|build|calculate|capture|check|cite|clean|close|code|collect|commence|compare|compile|complete|confirm|contact|convert|copy|count|create|cut|define|derive|design|develop|document|draft|draw|edit|email|estimate|evaluate|export|extract|file|fill|filter|find|finish|fit|fix|flag|format|generate|grade|group|highlight|identify|import|inspect|install|interpret|interview|invert|label|leave|list|log|make|map|mark|measure|merge|model|move|name|normalize|note|open|organize|outline|parse|paste|plot|polish|prepare|print|prove|pull|read|record|recreate|refactor|register|remove|rename|replace|replicate|report|request|rerun|resend|resolve|respond|resume|review|revise|rewrite|run|save|schedule|search|select|send|set|share|skim|sort|spot-check|start|submit|summarize|synthesize|tag|test|trace|transcribe|translate|trim|update|upload|validate|verify|write)$/i;
-  const broad=/^(?:analyse|analyze|write|review|finish|start|complete|revise|read|clean)\s+(?:(?:the|my|a)\s+)?(?:thesis|dissertation|paper|dataset|chapter\s+\d+|literature review)$/i;
-  return words.length>=2&&(actions.test(words[0])||/^(?:bound|diagonalize|differentiate|discretize|integrate|linearize|reply)$/i.test(words[0]))&&!broad.test(title.replace(/[.!?]+$/,''));
+function requireActionText(value) {
+  if(!hasText(value)) throw Error('Enter an action in your own words.');
 }
-const actionHint='Name a concrete action and object, such as “Outline three claims for Chapter 2.”';
 function suggestedReturnDay(){
   let date=fromToday(1);
   if(state.settings.shield&&state.settings.shieldWeekends) while([0,6].includes(dateIn(date).getDay())) date=shift(date,1);
   return date;
 }
 const suggestedReturnTime=()=>state.settings.shield?state.settings.resume:'09:00';
-function validatePlan(title) {if(!actionText(title)) throw Error(actionHint);}
 const dueForReview=t=>!t.archivedAt&&t.status!=='Done'&&Boolean(t.decisionReason||t.date&&t.date<today()&&t.date!==t.reviewedDue);
 const roleOfTask=t=>roles.includes(t?.role)?t.role:'Research';
 function currentPlan() {
@@ -88,7 +82,7 @@ function resetPlanDialog(key) {
       txt('Follow up with '+(t.waiting||'the person you’re waiting on')+'.','muted'),'Set follow-up','',t.id));
     return;
   }
-  dialog('Plan a next action',form('reset-plan',field('Concrete next action','title',t.title,{required:true,placeholder:'Plot the distribution of variable X'})+
+  dialog('Plan a next action',form('reset-plan',field('Concrete next action','title',t.title,{required:true,placeholder:'Variable X · distribution plot'})+
     pair(field('Work date','date',t.planDate>=today()?t.planDate:today(),{type:'date',required:true}),field('Start time','startTime',t.startTime||'',{type:'time'}))+
     select('Slot','planKind',t.role==='Research'?dayKinds:[dayKinds[1]],taskKind(t))+
     (haveGoalPlan(t)?'<details class="details-options"><summary>Goal setup</summary>'+goalFields(t,{open:taskKind(t)==='deep'})+'</details>':goalFields(t,{open:taskKind(t)==='deep'}))+
@@ -135,7 +129,7 @@ function frictionDialog(key) {
   dialog('Friction check-in',form('friction',txt(t.title,'plan-question')+
     txt('It’s understandable if this feels hard to start. Pick a smaller step you could try for five minutes.','muted')+
     select('What feels difficult?','frictionType',frictions.map(([value,label])=>[value,label]),'vague')+
-    field('Five-minute action','smallStep',actionText(t.response)?t.response:frictions[0][2],{required:true})+
+    field('Five-minute action','smallStep',hasText(t.response)?t.response:frictions[0][2],{required:true})+
     select('Slot','planKind',t.role==='Research'?dayKinds:[dayKinds[1]],taskKind(t))+
     goalFields(t,{open:taskKind(t)==='deep'})+
     '<div class="inline wrap-inline">'+button('Reset the date','reset-plan',t.id,'ghost','calendar')+'</div>',
@@ -188,7 +182,7 @@ function openFocusTask(key) {
   const task=find('tasks',key);
   if(!task||task.archivedAt||task.status!=='Next') return;
   if(!canWork(task)) return resetPlanDialog(key);
-  if(!actionText(task.title)) return resetPlanDialog(key);
+  if(!hasText(task.title)) return resetPlanDialog(key);
   if(state.focus.status!=='idle') return notify('Finish the current session to change its task.');
   if(!focusableTask(task)) return;
   if(dueForReview(task)) return frictionDialog(key);
@@ -198,14 +192,14 @@ function startPlanned(key){
   const task=find('tasks',key);
   if(!canWork(task)) return;
   if(state.focus.status!=='idle'){go('focus');return;}
-  if(!actionText(task.title)) return resetPlanDialog(key);
+  if(!hasText(task.title)) return resetPlanDialog(key);
   if(dueForReview(task)) return frictionDialog(key);
   if(selectedFocus(key,true)){go('focus');startTimer();}
 }
 
 function returnOptions(reference, selected=''){
   const role=roleOfTask(reference);
-  const candidates=state.tasks.filter(t=>!t.archivedAt&&t.status==='Next'&&actionText(t.title)&&t.role===role&&
+  const candidates=state.tasks.filter(t=>!t.archivedAt&&t.status==='Next'&&hasText(t.title)&&t.role===role&&
     (!researchLock||taskKind(t)==='deep')&&(!t.planDate||t.planDate>=today()));
   candidates.sort((a,b)=>Number(b.milestone===reference?.milestone)-Number(a.milestone===reference?.milestone)||
     (a.planDate||'9999').localeCompare(b.planDate||'9999')||(a.startTime||'99:99').localeCompare(b.startTime||'99:99'));
@@ -231,7 +225,7 @@ function closeParkDialog() {
     {locked:true});
 }
 function scheduleReturn(data, reference) {
-  validatePlan(data.next);
+  requireActionText(data.next);
   if(!validDay(data.date)||data.date<today()||!validTime(data.time)) throw Error('Choose a return date and time.');
   const planDate=data.horizon==='on'?'':data.date;
   if(data.reuse) {
@@ -563,7 +557,6 @@ async function supportSubmit(method, target, data) {
     closeDialog();commit('Plan saved.');
   } else if(method==='friction'){
     if(!entry||entry.archivedAt||entry.status==='Done') throw Error('Choose an open task.');
-    validatePlan(data.smallStep);
     const date=today();
     const step={id:id(),title:data.smallStep,minutes:5,role:roleOfTask(entry),status:'Next',milestone:entry.milestone,
       planDate:date,primaryDay:date,parent:entry.id,fiveMinute:true,pilotId:entry.pilotId||'',lastTouched:date,
@@ -680,7 +673,7 @@ const supportActions={
   'quick-capture':captureDialog,
   'capture-plan':key=>{
     const capture=state.support.captures.find(n=>n.id===key);
-    if(capture) editDialog('tasks','',{title:actionText(capture.title)?capture.title.slice(0,180):'',details:capture.title,planDate:'',fromCapture:key});
+    if(capture) editDialog('tasks','',{title:capture.title.slice(0,180),details:capture.title,planDate:'',fromCapture:key});
   },
   'archive-capture':key=>{const note=state.support.captures.find(n=>n.id===key);if(note){note.archived=true;commit('Capture archived.');}},
   'unarchive-capture':key=>{const note=state.support.captures.find(n=>n.id===key);if(note){note.archived=false;commit('Capture restored.');}},
