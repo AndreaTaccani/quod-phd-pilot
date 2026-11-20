@@ -17,7 +17,7 @@ const draftStages = ['Outline','First draft','Revision','Polishing','Complete'];
 const cvKinds = ['Talk','Paper accepted','Guest lecture','Award','Other CV item'];
 const logKinds = ['Effort','Learning','Negative result','Reflection','Task done','Focus','Writing','Reading','Shutdown','Milestone done','Chapter cleared',...cvKinds];
 const pages = [
-  ['WORKSPACE',[['today','Today','sun'],['tasks','Horizon','map'],['roadmap','Roadmap','checklist'],['focus','Focus & writing','timer']]],
+  ['WORKSPACE',[['today','Today','sun'],['tasks','Horizon','map'],['projects','Projects','columns'],['roadmap','Roadmap','checklist'],['focus','Focus & writing','timer']]],
   ['RESEARCH',[['reading','Reading & notes','book'],['pipeline','Academic pipeline','columns'],['advisor','Advisor meetings','people'],['log','Research log','journal']]],
   ['SUPPORT',[['room','Co-working room','people'],['wellbeing','Wellbeing','leaf'],['settings','Settings & export','settings']]]
 ];
@@ -88,7 +88,7 @@ const minutesLabel = minutes => minutes >= 60 ? Math.floor(minutes/60)+'h'+(minu
 const find = (collection,key) => state[collection].find(item=>item.id===key);
 function focusDefaults() { return {preset:25, breakPreset:5, sessionPreset:0, mode:'focus', taskId:'', freeLabel:'', status:'idle', remaining:1500, elapsed:0, anchor:0, end:0}; }
 function blank() {
-  return {version:1,tasks:[],milestones:[],reading:[],notes:[],pipeline:[],meetings:[],logs:[],drafts:[],rest:[],settings:{name:'',goal:750,shutdown:'17:00',weekends:true,...shieldDefaults()},focus:focusDefaults(),support:supportDefaults(),sample:false};
+  return {version:1,tasks:[],projects:[],milestones:[],reading:[],notes:[],pipeline:[],meetings:[],logs:[],drafts:[],rest:[],settings:{name:'',goal:750,shutdown:'17:00',weekends:true,...shieldDefaults()},focus:focusDefaults(),support:supportDefaults(),workHours:loadWorkHours(),sample:false};
 }
 function makeSample() {
   const s=blank();
@@ -131,13 +131,15 @@ function makeSample() {
   s.focus.taskId='t1';
   return s;
 }
-const collections=['tasks','milestones','reading','notes','pipeline','meetings','logs','drafts'];
+const collections=['tasks','milestones','reading','notes','pipeline','meetings','logs','drafts','projects'];
 function validated(data) {
-  if (!data || data.version!==1 || !collections.every(key=>Array.isArray(data[key]) && data[key].every(item=>item && typeof item==='object' && typeof item.id==='string' && typeof item.title==='string')) || !Array.isArray(data.rest)) throw Error('Choose a Quod JSON backup.');
+  if (!data || data.version!==1 || !Array.isArray(data.rest)) throw Error('Choose a Quod JSON backup.');
+  const records={projects:[],...data};
+  if(!collections.every(key=>Array.isArray(records[key])&&records[key].every(item=>item&&typeof item==='object'&&typeof item.id==='string'&&typeof item.title==='string'))) throw Error('Choose a Quod JSON backup.');
   const config=data.settings||{};
   const focus={...focusDefaults(),...data.focus};
   if(!['idle','running','paused'].includes(focus.status)||!['focus','break'].includes(focus.mode)||!Number.isFinite(focus.remaining)||!Number.isFinite(focus.end)) Object.assign(focus,focusDefaults());
-  return {...blank(),...Object.fromEntries(collections.map(key=>[key,data[key]])),tasks:migrateTasks(data.tasks),rest:data.rest.filter(validDay),sample:data.sample===true,settings:{name:String(config.name||'').slice(0,80),goal:num(config.goal),shutdown:validTime(config.shutdown)?config.shutdown:'17:00',weekends:config.weekends!==false,shield:config.shield===true,shieldWeekends:config.shieldWeekends!==false,resume:validTime(config.resume)?config.resume:'08:30'},focus,support:loadSupport(data.support)};
+  return {...blank(),...Object.fromEntries(collections.map(key=>[key,records[key]])),tasks:migrateTasks(data.tasks),rest:data.rest.filter(validDay),sample:data.sample===true,settings:{name:String(config.name||'').slice(0,80),goal:num(config.goal),shutdown:validTime(config.shutdown)?config.shutdown:'17:00',weekends:config.weekends!==false,shield:config.shield===true,shieldWeekends:config.shieldWeekends!==false,resume:validTime(config.resume)?config.resume:'08:30'},focus,support:loadSupport(data.support),workHours:loadWorkHours(data.workHours)};
 }
 let stored=true,loadError=false,storageRaw=null,storageIssue='';
 function loadState(){
@@ -213,9 +215,11 @@ function filters(values, current, action) {
 function taskRow(task, detail=false, showTime=false) {
   const completed=task.status==='Done';
   const milestone=find('milestones',task.milestone);
+  const project=detail?taskProject(task):null;
   return '<div class="task-row'+(completed?' done':'')+'"><button type="button" class="task-check" aria-label="Done: '+e(task.title)+'" aria-pressed="'+completed+'" data-action="toggle-task" data-value="'+e(task.id)+'">'+(completed?glyph('check'):'')+'</button><div class="grow"><button class="task-title" type="button" data-action="edit" data-value="'+e(frag('tasks',task.id))+'">'+e(task.title)+'</button><div class="task-meta">'+badge(task.role||'Research',lower(task.role||''))+
     (task.status==='Waiting'?badge(task.waiting?'Waiting on '+task.waiting:'Waiting','wait'):'')+
     (detail&&milestone?badge(milestone.title,'neutral'):'')+
+    (project?badge(project.title,'neutral'):'')+
     (detail&&task.repeat&&task.repeat!=='None'?badge(task.repeat,'neutral'):'')+taskSupportMeta(task,detail,showTime)+
     (detail&&task.date?'<span class="meta">'+e(displayDate(task.date,{month:'short',day:'numeric',year:'numeric'}))+'</span>':'')+'</div>'+
     ((detail||task.planDate===today())&&taskKind(task)==='deep'&&task.doneLooks?txt('Done when · '+task.doneLooks,'meta format'):'')+
@@ -257,7 +261,7 @@ function dash() {
     '<div class="grid dashboard-grid">'+panel('Today’s plan',slotRows()+decisionDrawer()+'<div class="section-rule"></div>'+
     '<div class="inline wrap-inline">'+button('Open Horizon','all-tasks','','ghost','map')+button('Quick capture','quick-capture','','ghost','plus')+(state.support.pilot?button('Pilot week','pilot-week','','ghost','calendar'):'')+'</div>',
     {description:'One deep research goal and up to two small maintenance tasks.'})+
-    '<div class="stack">'+timerPanel()+'<section class="panel warm shutdown-card"><span class="soft-icon">'+glyph('moon')+'</span><div><h3>'+ (finished?'Day closed':'Daily shutdown')+'</h3><p class="meta">'+ (finished?'Your next step is saved.': e(state.settings.shutdown)+' · Make a plan to return')+'</p></div>'+button(finished?'Review':'Close day','shutdown','','secondary')+'</section></div></div>'+
+    '<div class="stack">'+timerPanel()+'<section class="panel warm shutdown-card"><span class="soft-icon">'+glyph('moon')+'</span><div><h3>'+ (finished?'Day closed':'Daily shutdown')+'</h3><p class="meta">'+ (finished?'Your next step is saved.': e(state.settings.shutdown)+' · Make a plan to return')+'</p></div>'+button(finished?'Review':'Close day','shutdown','','secondary')+'</section>'+workHoursPanel()+'</div></div>'+
     '<div class="section-gap">'+finishFeed()+'</div>';
 }
 
@@ -277,7 +281,9 @@ function roadmapView() {
   const content=years.map(year=>'<div class="road-row"><span class="year-label">'+e(year)+'</span><div class="grow">'+items.filter(m=>(m.date?.slice(0,4)||'Flexible')===year).map(m=>{
     const links=state.notes.filter(n=>n.milestone===m.id);
     const tasks=state.tasks.filter(t=>!t.archivedAt&&t.milestone===m.id);
-    return listRow(m.title,'<div class="task-meta">'+badge(m.status,m.status==='Waiting'?'wait':'')+(m.date?'<time class="meta">'+e(displayDate(m.date))+'</time>':'')+'</div>'+txt(m.question,'plan-question')+txt(m.purpose,'meta format')+txt(m.details,'meta format')+
+    const project=find('projects',m.project);
+    return listRow(m.title,'<div class="task-meta">'+badge(m.status,m.status==='Waiting'?'wait':'')+(m.date?'<time class="meta">'+e(displayDate(m.date))+'</time>':'')+
+      (project?badge(project.title,'neutral'):'')+'</div>'+txt(m.question,'plan-question')+txt(m.purpose,'meta format')+txt(m.details,'meta format')+
       (links.length||tasks.length?'<div class="inline wrap-inline compact">'+
       (tasks.length?button(tasks.length+(tasks.length===1?' linked task':' linked tasks'),'milestone-tasks',m.id,'ghost','checklist'):'')+
       links.map(n=>button(n.title,'edit',frag('notes',n.id),'ghost','link')).join('')+'</div>':''),
@@ -425,10 +431,11 @@ function settingsView() {
     '<div class="grid grid-even">'+panel('Workspace preferences','<form class="form-grid" data-form="settings">'+
     field('Your name','name',state.settings.name,{placeholder:'Optional',maxLength:80})+
     '<div class="form-pair">'+field('Weekly word goal','goal',state.settings.goal,{type:'number',min:0,max:1000000})+field('Daily shutdown time','shutdown',state.settings.shutdown,{type:'time',required:true})+'</div>'+
-    tick('weekends','Treat weekends as writing rest days',state.settings.weekends)+
+    tick('weekends','Treat weekends as rest days for writing and work hours',state.settings.weekends)+
     '<div class="section-rule"></div>'+tick('shield','Enable the off-hours shield',state.settings.shield)+
     pair(field('Work resumes at','resume',state.settings.resume,{type:'time',required:true}),tick('shieldWeekends','Keep the shield on during weekends',state.settings.shieldWeekends))+
     '<div>'+button('Save preferences','submit','','primary')+'</div></form>')+
+    panel('Research work hours',button('Work hours settings','work-hours','','secondary'))+
     panel('Back up & export',txt('Workspace data stays in this browser. Use a JSON backup to move it to another device, copy, or browser.','muted')+
     '<div class="inline wrap-inline section-gap">'+button('JSON backup','backup','','primary','download')+button('Restore backup','restore','','secondary')+button('Markdown','markdown-export','','secondary')+
     button('CSV','csv-export','','secondary')+button('BibTeX','bib-export','','secondary')+button('Calendar','calendar-export','','secondary')+button('Academic CV','cv-export','','secondary')+'</div>')+
@@ -439,7 +446,7 @@ function settingsView() {
     '<div class="compact">'+button('Switch off now','shield-now','','secondary','moon')+'</div>')+panel('Offline & connections',txt('The downloaded HTML works offline. The web version is available offline after it loads and caches its files. Zotero sync and source links need a connection.','muted')+
     '<div class="compact">'+button('Zotero sync','zotero','','secondary','link')+'</div>')+'</div>';
 }
-const views={today:dash,tasks:tasksView,roadmap:roadmapView,reading:readingView,pipeline:pipelineView,advisor:advisorView,focus:focusView,log:logView,room:roomView,wellbeing:wellbeingView,settings:settingsView};
+const views={today:dash,tasks:tasksView,projects:projectsView,roadmap:roadmapView,reading:readingView,pipeline:pipelineView,advisor:advisorView,focus:focusView,log:logView,room:roomView,wellbeing:wellbeingView,settings:settingsView};
 function render() {
   refreshBoard(state);
   const nextMode=availableMode();
@@ -519,7 +526,7 @@ function formError(target,message) {
   if(where){where.textContent=message; where.hidden=false;}
   else notify(message);
 }
-const fieldNames={tasks:['task','Task'],milestones:['milestone','Milestone'],reading:['reference','Reference'],notes:['note','Note'],pipeline:['pipeline item','Pipeline item'],meetings:['meeting','Meeting'],logs:['log entry','Log entry'],drafts:['draft','Draft']};
+const fieldNames={tasks:['task','Task'],projects:['project','Project'],milestones:['milestone','Milestone'],reading:['reference','Reference'],notes:['note','Note'],pipeline:['pipeline item','Pipeline item'],meetings:['meeting','Meeting'],logs:['log entry','Log entry'],drafts:['draft','Draft']};
 const prepDefault='42 | Request recommendation letters\n21 | Draft the narrative and budget\n7 | Ask a colleague to review the application';
 function editDialog(collection,key='',preset={},isDraft=false) {
   if(!fieldNames[collection]) return;
@@ -530,6 +537,7 @@ function editDialog(collection,key='',preset={},isDraft=false) {
   let fields=field(collection==='tasks'?'Concrete action':'Title','title',item.title,{required:true,placeholder:collection==='tasks'?'Chapter 2 · three claims to outline':''});
   if(collection==='tasks') fields+=
     pair(select('Role','role',researchLock?['Research']:roles,item.role||'Research'),field('Estimated minutes','minutes',item.minutes??45,{type:'number',min:1,max:720}))+
+    (state.projects.length?select('Project','project',[['','Use the milestone’s project, if any'],...refs('projects').slice(1)],item.project):'')+
     taskPlanningFields(item)+
     '<details class="details-options"'+(item.date||item.status==='Waiting'||item.repeat&&item.repeat!=='None'?' open':'')+'><summary>Due dates, links and other details</summary><div class="form-grid">'+
     pair(select('Status','status',taskStages,item.status||'Next'),field('Due or follow-up date','date',item.date,{type:'date'}))+
@@ -537,8 +545,11 @@ function editDialog(collection,key='',preset={},isDraft=false) {
     pair(field('Waiting on','waiting',item.waiting,{placeholder:'Person, feedback, or decision'}),select('CV entry on completion','cvType',[['','None'],...cvKinds],item.cvType))+
     area('Next action or notes','details',item.details,'Open the draft and outline three claims')+'</div></details>'+
     (preset.fromCapture?'<input type="hidden" name="fromCapture" value="'+e(preset.fromCapture)+'">':'');
+  if(collection==='projects') fields+=select('Status','status',milestoneStages,item.status||'Planned')+
+    area('What do you want this project to produce?','outcome',item.outcome,'A preprint, a chapter draft, or a validated method');
   if(collection==='milestones') fields+=
     pair(field('Target date','date',item.date,{type:'date'}),select('Status','status',milestoneStages,item.status||'Planned'))+
+    (state.projects.length?select('Project','project',refs('projects'),item.project):'')+
     select('Type','kind',['Milestone','Chapter'],item.kind||'Milestone')+
     field('Research question','question',item.question,{placeholder:'What are we trying to understand?',maxLength:300})+
     area('Why does this matter?','purpose',item.purpose,'Connect this milestone to the purpose of the thesis.')+
@@ -565,6 +576,7 @@ function editDialog(collection,key='',preset={},isDraft=false) {
     pair(select('Entry type','kind',logKinds,item.kind||'Effort'),field('Date','date',item.date||today(),{type:'date',required:true}))+
     pair(field('Minutes of effort','minutes',item.minutes,{type:'number',min:0,max:1440}),field('Words written','words',item.words,{type:'number',min:0,max:1000000}))+
     pair(select('Draft','draft',refs('drafts'),item.draft),select('Task','task',refs('tasks'),item.task))+
+    select('Role for work hours','role',[['','Use linked task or Research'],...roles],item.role)+
     area('What happened or what did you learn?','details',item.details,'A result, a dead end, or something worth remembering')+
     tick('private','Keep this entry out of weekly digests and CV exports',item.private);
   if(collection==='drafts') fields+=
@@ -759,6 +771,7 @@ function saveRecord(formElement,data) {
   }
   if(collection==='logs'){
     item.minutes=num(item.minutes); item.words=num(item.words); item.private=data.private==='on'; item.created=current?.created||Date.now();
+    if(item.minutes!==num(current?.minutes)) delete item.seconds;
   }
   if(current) state[collection]=state[collection].map(x=>x.id===key?item:x);
   else state[collection].push(item);
@@ -842,8 +855,8 @@ function download(name,content,type='text/plain;charset=utf-8') {
 const exportName = suffix => 'quod-'+today()+suffix;
 const markdownLine = text => String(text??'').replace(/\r?\n/g,' ').trim();
 function markdownExport() {
-  const sections=[['Roadmap','milestones'],['Tasks','tasks'],['Reading queue','reading'],['Linked notes','notes'],['Academic pipeline','pipeline'],['Advisor meetings','meetings'],['Research log','logs'],['Drafts','drafts'],['Quick captures','captures']];
-  const titleMap={milestone:'milestones',task:'tasks',paper:'reading',draft:'drafts'};
+  const sections=[['Projects','projects'],['Roadmap','milestones'],['Tasks','tasks'],['Reading queue','reading'],['Linked notes','notes'],['Academic pipeline','pipeline'],['Advisor meetings','meetings'],['Research log','logs'],['Drafts','drafts'],['Quick captures','captures']];
+  const titleMap={project:'projects',milestone:'milestones',task:'tasks',paper:'reading',draft:'drafts'};
   const labels={details:'Notes',doneDate:'Completed',rest:'Rest',url:'URL',doi:'DOI'};
   const ignored=new Set(['id','title','created','updated','completion','spawned','spawnedFrom','readLog','cvEntry','bib','zotero','extracted','progress','next','cue']);
   const lines=['# Quod workspace','', 'Exported '+today(), '', 'Weekly word goal · '+state.settings.goal,
@@ -1146,6 +1159,7 @@ async function handleSubmit(target) {
   if(await quodSubmit(method,target,data)) return;
   if(await supportSubmit(method,target,data)) return;
   if(method==='record') return saveRecord(target,data);
+  if(method==='work-hours'||method==='work-day') return saveWorkHours(method,target,data);
   if(method==='settings'){
     if(data.shield==='on'&&data.shutdown===data.resume) throw Error('Choose different shield and resume times.');
     state.settings={name:data.name,goal:num(data.goal),shutdown:data.shutdown,weekends:data.weekends==='on',shield:data.shield==='on',resume:data.resume,shieldWeekends:data.shieldWeekends==='on'};
@@ -1294,6 +1308,10 @@ const actions={
   'pick-focus':pickFocus,
   'focus-task':openFocusTask,
   'toggle-task':toggleTask,
+  'project-milestone':value=>editDialog('milestones','',{project:value}),
+  'project-action':value=>editDialog('tasks','',{project:value}),
+  'work-hours':workHoursDialog,
+  'work-day':workDayDialog,
   'milestone-task':value=>editDialog('tasks','',{milestone:value}),
   'milestone-tasks':value=>{
     const milestone=find('milestones',value);
@@ -1342,13 +1360,16 @@ const actions={
   },
   delete:value=>{
     const [collection,key]=split(value), item=find(collection,key);
-    if(item) confirm('Delete '+fieldNames[collection][0]+'?',item.title+' will be removed from this workspace.','delete-confirm',value,'Delete');
+    if(item) confirm('Delete '+fieldNames[collection][0]+'?',collection==='projects'?'Delete '+item.title+'? Its milestones and actions will stay in your workspace.':item.title+' will be removed from this workspace.','delete-confirm',value,'Delete');
   },
   'delete-confirm':value=>{
     const [collection,key]=split(value);
+    const milestoneProject=collection==='milestones'?find('milestones',key)?.project:'';
     state[collection]=state[collection].filter(x=>x.id!==key);
     if(collection==='tasks'&&state.focus.taskId===key&&state.focus.status==='idle') state.focus.taskId='';
+    if(milestoneProject) for(const task of state.tasks) if(task.milestone===key&&!task.project) task.project=milestoneProject;
     if(collection==='milestones') for(const x of [...state.tasks,...state.notes,...state.drafts]) if(x.milestone===key) x.milestone='';
+    if(collection==='projects') for(const x of [...state.tasks,...state.milestones]) if(x.project===key) x.project='';
     if(collection==='reading') for(const x of state.notes) if(x.paper===key) x.paper='';
     if(collection==='drafts') for(const x of state.logs) if(x.draft===key) x.draft='';
     closeDialog();commit('Item deleted.');

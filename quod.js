@@ -237,7 +237,7 @@ async function quodSubmit(method,target,data){
     const minutes=work.decisionReason==='compost'?15:5;
     const next={id:id(),title:data.title,role:work.role,status:'Next',minutes,planDate:data.date,primaryDay:data.date,
       planKind:data.planKind,doneLooks:data.doneLooks,obstacle:data.obstacle,response:data.response,
-      milestone:work.milestone,parent:work.id,pilotId:work.pilotId,fiveMinute:minutes===5,lastTouched:today(),
+      milestone:work.milestone,project:work.project,parent:work.id,pilotId:work.pilotId,fiveMinute:minutes===5,lastTouched:today(),
       date:work.date,reviewedDue:work.date<today()?work.date:'',details:'Starter for '+work.title};
     requireActionText(next.title);
     if(taskKind(next)==='deep'&&data.date)checkGoalPlan(next);

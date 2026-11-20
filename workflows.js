@@ -250,7 +250,7 @@ function scheduleReturn(data, reference) {
     planKind:data.returnKind||taskKind(reference||{role:'Research'}),doneLooks:data.returndoneLooks||reference?.doneLooks,
     obstacle:data.returnobstacle||reference?.obstacle,response:data.returnresponse||reference?.response,
     previousPlanDate:planDate?'':data.date,lastTouched:today(),
-    returnCue:data.cue,milestone:reference?.milestone||'',parent:reference?.id||'',pilotId:reference?.pilotId||''};
+    returnCue:data.cue,milestone:reference?.milestone||'',project:reference?.project||'',parent:reference?.id||'',pilotId:reference?.pilotId||''};
   ensureSlot(next,planDate);
   state.tasks.push(next);
   return next;
@@ -558,7 +558,7 @@ async function supportSubmit(method, target, data) {
   } else if(method==='friction'){
     if(!entry||entry.archivedAt||entry.status==='Done') throw Error('Choose an open task.');
     const date=today();
-    const step={id:id(),title:data.smallStep,minutes:5,role:roleOfTask(entry),status:'Next',milestone:entry.milestone,
+    const step={id:id(),title:data.smallStep,minutes:5,role:roleOfTask(entry),status:'Next',milestone:entry.milestone,project:entry.project,
       planDate:date,primaryDay:date,parent:entry.id,fiveMinute:true,pilotId:entry.pilotId||'',lastTouched:date,
       planKind:data.planKind,doneLooks:data.doneLooks,obstacle:data.obstacle,response:data.response,
       date:entry.date,reviewedDue:entry.date<today()?entry.date:''};
@@ -792,21 +792,24 @@ function weekView(){
   const start=validDay(weekStart)?weekStart:startOfWeek(), end=shift(start,6);
   const range=displayDate(start,{month:'short',day:'numeric'})+' to '+displayDate(end,{month:'short',day:'numeric',year:'numeric'});
   const pilot=state.support.pilot;
+  const workLogs=state.workHours.target?workLogsByDay():null;
+  const workDays=workLogs?workHistory(workLogs):null;
   const days=Array.from({length:7},(_,i)=>shift(start,i)).map(day=>{
     const tasks=state.tasks.filter(t=>onBoard(t)&&t.planDate===day).sort((a,b)=>
       Number(b.primaryDay===day)-Number(a.primaryDay===day)||(a.startTime||'99:99').localeCompare(b.startTime||'99:99'));
     const meeting=state.meetings.filter(m=>m.date===day);
-    const weekends=state.rest.includes(day)||(state.settings.weekends&&[0,6].includes(dateIn(day).getDay()));
+    const weekends=workRestDay(day);
     return '<section class="panel week-day'+(day===today()?' week-today':'')+'"><div class="panel-head"><div><h2>'+e(displayDate(day,{weekday:'long'}))+'</h2>'+
       '<time datetime="'+day+'" class="meta">'+e(displayDate(day))+'</time></div>'+
       (day>=today()?iconButton('Add action for '+displayDate(day),'plus','week-add',day):'')+'</div>'+
+      (workLogs?workWeekSummary(day,workLogs,workDays):'')+
       (tasks.length?tasks.map(t=>taskRow(t,false,true)).join(''):empty(weekends?'Rest day':'No work planned'))+
       meeting.map(m=>listRow(m.title,txt(m.attendees),' '+edit('meetings',m),'<span class="soft-icon">'+glyph('people')+'</span>')).join('')+'</section>';
   }).join('');
   const intro=pilotWeekInfo(start);
   return heading('Week plan',range,button('Go to today','zoom','day','secondary','sun'))+zoomButtons()+
     '<div class="inline wrap-inline week-nav">'+button('Previous week','week-shift','-7','secondary')+
-    button('This week','week-current','','ghost')+button('Next week','week-shift','7','secondary')+
+    button('This week','week-current','','ghost')+button('Next week','week-shift','7','secondary')+button('Work hours settings','work-hours','','ghost')+
     (pilot&&pilot.start!==start?button('Pilot week','pilot-week','','ghost','map'):'')+'</div>'+
     (intro?'<div class="week-intro">'+intro+'</div>':'')+'<div class="week-grid">'+days+'</div>';
 }

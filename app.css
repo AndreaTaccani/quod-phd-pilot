@@ -102,6 +102,8 @@ dialog[data-locked] [data-action=close] { display:none; }
 .slot-group .task-row { padding:8px 0; }
 .goal-fields { min-width:0; padding:11px 12px 13px; display:grid; gap:10px; margin:0; border:1px solid #d9e7db; border-radius:10px; background:#f2f6f0; }
 .goal-fields legend { padding:0 3px; color:#345644; font-weight:650; font-size:.88rem; }
+.work-hours-value { font-weight:650; }
+.work-day-summary { margin-bottom:8px; }
 .decision-drawer { border:1px solid var(--line); border-radius:10px; padding:7px 10px; background:#fafbf8; }
 .decision-drawer summary { padding:3px 1px; color:var(--green); font-weight:650; cursor:pointer; }
 .decision-content { padding:5px 0 2px; }
