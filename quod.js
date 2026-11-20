@@ -1,8 +1,8 @@
 'use strict';
 
 const smallLimit=25;
-const dayKinds=[['deep','Deep research goal'],['small','Small maintenance task']];
-const dayLimits={deep:1,small:2};
+const dayKinds=[['deep','Research block'],['small','Small maintenance task'],['reading','Reading block']];
+const maintenanceLimit=2;
 const goalPrompts=[
   ['doneLooks','What does done look like?','One paragraph states the claim and its assumptions','Describe what done looks like for this goal.'],
   ['obstacle','What is most likely to stall you?','I keep opening papers beyond the chapter scope','Name one obstacle that might stall this goal.'],
@@ -11,10 +11,11 @@ const goalPrompts=[
 const hasText=value=>typeof value==='string'&&Boolean(value.trim());
 const missingGoalPrompt=t=>goalPrompts.find(([key])=>!hasText(t[key]));
 const onBoard=t=>Boolean(t&&!t.archivedAt&&['Next','Done'].includes(t.status));
-const taskKind=t=>['deep','small'].includes(t?.planKind)?t.planKind:(t?.role==='Research'?'deep':'small');
+const taskKind=t=>dayKinds.some(([kind])=>kind===t?.planKind)?t.planKind:(t?.role==='Research'?'deep':'small');
+const researchBlock=t=>t?.role==='Research';
 const haveGoalPlan=t=>!missingGoalPrompt(t);
 const canWork=t=>Boolean(onBoard(t)&&t.status==='Next'&&t.planDate===today());
-const focusableTask=t=>canWork(t)&&(!researchLock||taskKind(t)==='deep');
+const focusableTask=t=>canWork(t)&&(!researchLock||researchBlock(t));
 const touchTask=(t,day=today())=>{t.lastTouched=day;};
 const workdayStamp=(value)=>typeof value==='number'&&Number.isFinite(value)?localDate(new Date(value)):'';
 class GoalPlanError extends Error {
@@ -33,20 +34,28 @@ function checkGoalPlan(t) {
 function checkSlotFit(t) {
   requireActionText(t.title);
   const kind=taskKind(t);
-  if(kind==='deep'){
-    if(t.role!=='Research') throw Error('Use a maintenance slot for teaching, service, or personal work.');
-    checkGoalPlan(t);
-  } else if(!num(t.minutes)||num(t.minutes)>smallLimit) throw Error('A maintenance slot fits an action of '+smallLimit+' minutes or less.');
+  if(researchBlock(t)){
+    if(!Number.isInteger(Number(t.minutes))||Number(t.minutes)<1) throw Error('Enter the number of minutes for this research or reading block.');
+    if(kind==='deep') checkGoalPlan(t);
+  } else if(kind!=='small') throw Error('Use a maintenance task for teaching, service, or personal work.');
+  else if(!num(t.minutes)||num(t.minutes)>smallLimit) throw Error('A maintenance task fits an action of '+smallLimit+' minutes or less.');
 }
 function ensureSlot(t,date,skip=[]) {
   if(!date||!onBoard(t)) return;
   if(!validDay(date)||date<today()) throw Error('Choose today or a future work date.');
   checkSlotFit(t);
-  const kind=taskKind(t);
-  const occupied=state.tasks.filter(other=>other.id!==t.id&&!skip.includes(other.id)&&onBoard(other)&&other.planDate===date&&taskKind(other)===kind);
-  if(occupied.length>=dayLimits[kind]){
-    const label=date===today()?'Today':displayDate(date);
-    throw Error(label+' already has '+(kind==='deep'?'its deep research goal':'two maintenance tasks')+'. Choose another date or keep this in Horizon.');
+  const scheduled=state.tasks.filter(other=>onBoard(other)&&other.planDate===date);
+  const remaining=scheduled.filter(other=>other.id!==t.id&&!skip.includes(other.id));
+  const label=date===today()?'Today':displayDate(date);
+  if(researchBlock(t)){
+    const budget=researchBudget(date), planned=plannedResearchMinutes(remaining);
+    const next=planned+num(t.minutes);
+    // Keep existing reservations editable when a learned estimate or teaching schedule changes.
+    if(next>budget&&next>plannedResearchMinutes(scheduled)){
+      throw Error(label+' has '+workDuration(Math.max(0,budget-planned))+' left in its '+workDuration(budget)+' research budget. Shorten the block, choose another date, or edit the budget in Work hours.');
+    }
+  } else if(remaining.filter(other=>!researchBlock(other)).length>=maintenanceLimit){
+    throw Error(label+' already has two maintenance tasks. Choose another date or keep this in Horizon.');
   }
 }
 function moveToDecision(t, reason, day=today()) {
@@ -73,12 +82,12 @@ function refreshBoard(target) {
       changed=true;
     }
     if(t.planDate&&onBoard(t)){
-      const kind=taskKind(t), key=t.planDate+'|'+kind, used=scheduled.get(key)||0;
+      const used=scheduled.get(t.planDate)||0;
       let issue='';
       if(t.status!=='Done'){try{checkSlotFit(t);}catch{issue='setup';}}
-      if(!issue&&used>=dayLimits[kind]) issue='capacity';
+      if(!issue&&!researchBlock(t)&&used>=maintenanceLimit&&t.status!=='Done') issue='capacity';
       if(issue){moveToDecision(t,issue,day);changed=true;}
-      else scheduled.set(key,used+1);
+      else if(!researchBlock(t)) scheduled.set(t.planDate,used+1);
     }
     if(!t.planDate&&!t.archivedAt&&['Next','Waiting'].includes(t.status)&&t.lastTouched<=shift(day,-21)&&t.decisionReason!=='compost'){
       moveToDecision(t,'compost',day);
@@ -89,12 +98,11 @@ function refreshBoard(target) {
 }
 function slotRows() {
   const work=currentPlan();
-  return dayKinds.map(([kind,label])=>{
-    const slots=work.filter(t=>taskKind(t)===kind);
-    const name=kind==='deep'?'Deep research':'Maintenance';
+  return [['deep','Research','Add research block'],['reading','Reading','Add reading block'],['small','Maintenance','Add a small task']].map(([kind,name,label])=>{
+    const slots=work.filter(t=>(researchBlock(t)?(taskKind(t)==='reading'?'reading':'deep'):'small')===kind);
     return '<div class="slot-group"><div class="slot-head"><h3>'+e(name)+'</h3>'+
-      (slots.length<dayLimits[kind]?button(kind==='deep'?'Set a goal':'Add a small task','new-slot',kind,'ghost','plus'):'')+'</div>'+
-      (slots.length?slots.map(t=>taskRow(t)).join(''):txt(kind==='deep'?'Room for one goal worth finishing.':'Space for two small tasks.','meta slot-empty'))+'</div>';
+      (kind!=='small'||slots.length<maintenanceLimit?button(label,'new-slot',kind,'ghost','plus'):'')+'</div>'+
+      slots.map(t=>taskRow(t)).join('')+'</div>';
   }).join('');
 }
 function goalFields(item, options={}) {
@@ -127,20 +135,24 @@ function showGoalError(form,error) {
   return true;
 }
 function syncTaskGoal(form){
-  const kind=$('[name=planKind]',form);
+  const kind=$('[name=planKind],[name=returnKind]',form);
   if(!kind) return;
   const goal=$('[data-goal-fields]',form);
   if(goal){
     goal.hidden=kind.value!=='deep';
     if(goal.hidden) clearGoalError(form);
   }
+  const paper=$('[data-block-paper]',form);
+  if(paper) paper.hidden=kind.value!=='reading';
 }
-function parkedGoalFields(task){
+function parkedGoalFields(task,reference=task){
   const kind=taskKind(task||{role:'Research'});
   return tick('horizon','Park in Horizon and keep the return cue',false)+
-    '<details class="details-options"><summary>Research goal setup</summary>'+
-    '<div class="form-grid">'+select('Slot for a new action','returnKind',dayKinds,kind)+
-    goalFields(task||{},{prefix:'return',title:'For a deep research goal'})+'</div></details>';
+    '<details class="details-options"><summary>Return block details</summary>'+
+    '<div class="form-grid">'+select('Type for a new action','returnKind',reference&&reference.role!=='Research'?[dayKinds[1]]:dayKinds,kind)+
+    field('Minutes for a new block','returnMinutes',15,{type:'number',min:1,max:720})+
+    (state.reading.length?'<div data-block-paper'+(kind==='reading'?'':' hidden')+'>'+select('Reference (optional)','returnPaper',refs('reading'),task?.paper)+'</div>':'')+
+    goalFields(task||{},{prefix:'return',title:'For a research block',open:kind==='deep'})+'</div></details>';
 }
 
 const decisionText={
@@ -170,7 +182,7 @@ function decisionSmaller(key) {
   const defaultTitle=hasText(t.response)?t.response:hasText(t.title)&&num(t.minutes)<=mins?t.title:'';
   dialog(label,form('decision-smaller',txt(t.title,'plan-question')+
     field('Concrete starter action','title',defaultTitle,{required:true,placeholder:'Open the draft and outline one claim'})+
-    select('Slot','planKind',t.role==='Research'?dayKinds:[dayKinds[1]],taskKind(t))+
+    select('Block type','planKind',researchBlock(t)?dayKinds:[dayKinds[1]],taskKind(t))+
     field('Work date','date',compost?'':today(),{type:'date'})+
     txt('Leave the date empty to keep the starter in Horizon. The original stays in the archive.','meta')+
     goalFields(t,{open:taskKind(t)==='deep'}),compost?'Save 15-minute starter':'Save five-minute starter','',t.id));
@@ -237,7 +249,7 @@ async function quodSubmit(method,target,data){
     const minutes=work.decisionReason==='compost'?15:5;
     const next={id:id(),title:data.title,role:work.role,status:'Next',minutes,planDate:data.date,primaryDay:data.date,
       planKind:data.planKind,doneLooks:data.doneLooks,obstacle:data.obstacle,response:data.response,
-      milestone:work.milestone,project:work.project,parent:work.id,pilotId:work.pilotId,fiveMinute:minutes===5,lastTouched:today(),
+      milestone:work.milestone,project:work.project,paper:work.paper,parent:work.id,pilotId:work.pilotId,fiveMinute:minutes===5,lastTouched:today(),
       date:work.date,reviewedDue:work.date<today()?work.date:'',details:'Starter for '+work.title};
     requireActionText(next.title);
     if(taskKind(next)==='deep'&&data.date)checkGoalPlan(next);
@@ -253,8 +265,9 @@ const quodActions={
   'new-slot':kind=>{
     const pilot=state.support.pilot;
     const date=today();
-    const milestone=kind==='deep'&&pilot&&date>=pilot.start&&date<=shift(pilot.start,6)?pilot.milestone:'';
-    editDialog('tasks','',{planKind:kind,planDate:date,role:kind==='deep'?'Research':'Personal',minutes:kind==='small'?15:45,milestone});
+    const milestone=kind!=='small'&&pilot&&date>=pilot.start&&date<=shift(pilot.start,6)?pilot.milestone:'';
+    const minutes=kind==='small'?15:defaultBlockMinutes(date,kind==='reading'?30:45);
+    editDialog('tasks','',{planKind:kind,planDate:date,role:kind==='small'?'Personal':'Research',minutes,milestone});
   },
   'decision-smaller':decisionSmaller,
   'decision-defer':decisionDefer,
@@ -271,5 +284,5 @@ const quodActions={
 };
 const goalEvidence=[
   {label:'Goals & effort',title:'Pair the outcome with an obstacle',finding:'Experiments on idealized positive fantasies found reduced energization in the conditions studied. Separate experiments on publicly acknowledged identity-related intentions found lower enactment under some conditions.',design:'Quod makes a small outcome, likely obstacle, and concrete response part of goal setup.',author:'Kappes & Oettingen (2011)',url:'https://doi.org/10.1016/j.jesp.2011.02.003',second:['Gollwitzer et al. (2009)','https://pubmed.ncbi.nlm.nih.gov/19389130/']},
-  {label:'Goal pursuit',title:'Make a concrete if–then plan',finding:'A meta-analysis of mental contrasting with implementation intentions included 21 studies and estimated a small-to-moderate effect on goal attainment. The authors reported possible publication bias.',design:'The goal form uses that sequence. The daily slot limits and 21-day review are product choices.',author:'Wang et al. (2021)',url:'https://doi.org/10.3389/fpsyg.2021.565202'}
+  {label:'Goal pursuit',title:'Make a concrete if–then plan',finding:'A meta-analysis of mental contrasting with implementation intentions included 21 studies and estimated a small-to-moderate effect on goal attainment. The authors reported possible publication bias.',design:'The goal form uses that sequence. The daily time budget and 21-day review are product choices.',author:'Wang et al. (2021)',url:'https://doi.org/10.3389/fpsyg.2021.565202'}
 ];

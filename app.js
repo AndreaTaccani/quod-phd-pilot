@@ -216,7 +216,7 @@ function taskRow(task, detail=false, showTime=false) {
   const completed=task.status==='Done';
   const milestone=find('milestones',task.milestone);
   const project=detail?taskProject(task):null;
-  return '<div class="task-row'+(completed?' done':'')+'"><button type="button" class="task-check" aria-label="Done: '+e(task.title)+'" aria-pressed="'+completed+'" data-action="toggle-task" data-value="'+e(task.id)+'">'+(completed?glyph('check'):'')+'</button><div class="grow"><button class="task-title" type="button" data-action="edit" data-value="'+e(frag('tasks',task.id))+'">'+e(task.title)+'</button><div class="task-meta">'+badge(task.role||'Research',lower(task.role||''))+
+  return '<div class="task-row'+(completed?' done':'')+'"><button type="button" class="task-check" aria-label="Done: '+e(task.title)+'" aria-pressed="'+completed+'" data-action="toggle-task" data-value="'+e(task.id)+'">'+(completed?glyph('check'):'')+'</button><div class="grow"><button class="task-title" type="button" data-action="edit" data-value="'+e(frag('tasks',task.id))+'">'+e(task.title)+'</button><div class="task-meta">'+badge(taskKind(task)==='reading'?'Reading':task.role||'Research',lower(task.role||''))+
     (task.status==='Waiting'?badge(task.waiting?'Waiting on '+task.waiting:'Waiting','wait'):'')+
     (detail&&milestone?badge(milestone.title,'neutral'):'')+
     (project?badge(project.title,'neutral'):'')+
@@ -237,11 +237,13 @@ function timerPanel(full=false) {
   const f=focusState(), selected=find('tasks',f.taskId);
   const task=f.status==='idle'&&!focusableTask(selected)?null:selected;
   const isBreak=f.mode==='break', running=f.status==='running', paused=f.status==='paused';
+  const paper=!isBreak&&taskKind(task)==='reading'?find('reading',task.paper):null;
   const length=isBreak?f.breakPreset:(f.sessionPreset||f.preset);
   const options=[...new Set([...(isBreak?[3,5,10]:[5,15,25,45]),length])].sort((a,b)=>a-b);
   return '<section class="panel timer-panel"><div class="panel-head"><div class="timer-top"><span class="timer-header-icon">'+glyph(isBreak?'leaf':'timer')+'</span><h2>'+(isBreak?'Take a break':'Focus timer')+'</h2></div>'+
     (full?'':iconButton('Open distraction-free view','maximize','quiet'))+'</div>'+
     '<p class="timer-display" data-clock aria-label="Time remaining">'+asClock(f.seconds)+'</p><p class="timer-task">'+(isBreak?'Take a moment away from your work.': e(f.sessionTitle||task?.title||'Choose an action from Today.'))+'</p>'+(!isBreak?obstacleLine(task):'')+(f.status==='idle'&&!isBreak?'<div class="timer-row">'+button(task?'Change task':'Choose task','pick-focus',task?.id||'','ghost','checklist')+'</div>':'')+
+    (paper?'<div class="timer-row">'+external('Open source',paper.url||(paper.doi?'https://doi.org/'+paper.doi:''))+'</div>':'')+
     '<div class="timer-options" aria-label="Timer duration">'+options.map(amount=>'<button type="button" class="chip-button'+(length===amount?' selected':'')+'" data-action="duration" data-value="'+amount+'" aria-pressed="'+(length===amount)+'"'+(f.status!=='idle'?' disabled':'')+'>'+amount+' min</button>').join('')+
     iconButton('Timer settings','settings','timer-settings')+'</div><div class="timer-row">'+button(running?'Pause':paused?'Resume':isBreak?'Start break':'Start focus',running?'pause':'start','','primary',running?'pause':'play')+
     (f.status==='idle' ? (isBreak?button('Skip break','skip-break','','ghost'):'') : iconButton(isBreak?'End break':'End and log session','stop','stop'))+'</div></section>';
@@ -251,16 +253,17 @@ function dash() {
   if(zoom!=='day') return planningZoom();
   const todayTasks=currentPlan();
   const next=nextPlanTask();
-  const firstFree=['deep','small'].find(kind=>todayTasks.filter(t=>taskKind(t)===kind).length<dayLimits[kind]);
+  const budget=researchBudget(today());
+  const firstFree=plannedResearchMinutes(todayTasks)<budget?'deep':todayTasks.filter(t=>!researchBlock(t)).length<maintenanceLimit?'small':'';
   const finished=state.logs.some(item=>item.kind==='Shutdown'&&item.date===today());
   return heading(state.settings.name?'Welcome, '+state.settings.name+'.':'Today','Make room for the work that matters.', '',displayDate(today(),{weekday:'long',month:'long',day:'numeric'}))+zoomButtons()+
     '<section class="hero"><div class="hero-content"><p class="eyebrow">'+glyph('leaf')+' Daily focus</p><h2>Finish the work that matters.</h2><p>'+
     (next?'Next step · '+e(next.title):firstFree?'Choose the work you want to make room for.':'Today’s plan is complete.')+'</p>'+
     (next?button(state.focus.status==='idle'?'Start this focus':'Open focus timer','start-planned',next.id,'secondary','play')+button('Get unstuck','friction',next.id,'ghost','leaf'):
-      firstFree?button(firstFree==='deep'?'Set a goal':'Add a small task','new-slot',firstFree,'secondary','plus'):button('See what you finished','page','log','secondary','check'))+'</div></section>'+
+      firstFree?button(firstFree==='deep'?'Add research block':'Add a small task','new-slot',firstFree,'secondary','plus'):button('See what you finished','page','log','secondary','check'))+'</div></section>'+
     '<div class="grid dashboard-grid">'+panel('Today’s plan',slotRows()+decisionDrawer()+'<div class="section-rule"></div>'+
     '<div class="inline wrap-inline">'+button('Open Horizon','all-tasks','','ghost','map')+button('Quick capture','quick-capture','','ghost','plus')+(state.support.pilot?button('Pilot week','pilot-week','','ghost','calendar'):'')+'</div>',
-    {description:'One deep research goal and up to two small maintenance tasks.'})+
+    {description:researchPlanSummary(todayTasks,budget)})+
     '<div class="stack">'+timerPanel()+'<section class="panel warm shutdown-card"><span class="soft-icon">'+glyph('moon')+'</span><div><h3>'+ (finished?'Day closed':'Daily shutdown')+'</h3><p class="meta">'+ (finished?'Your next step is saved.': e(state.settings.shutdown)+' · Make a plan to return')+'</p></div>'+button(finished?'Review':'Close day','shutdown','','secondary')+'</section>'+workHoursPanel()+'</div></div>'+
     '<div class="section-gap">'+finishFeed()+'</div>';
 }
@@ -303,6 +306,7 @@ function readingView() {
     return '<div class="list-row"><div class="grow"><h4>'+e(item.title)+'</h4>'+citation+
     '<div class="inline wrap-inline compact">'+badge(item.stage,'neutral')+(item.zotero?badge('Zotero','neutral'):'')+
     external('Open source',item.url||(item.doi?'https://doi.org/'+item.doi:''))+
+    button('Plan reading','plan-reading',item.id,'ghost','calendar')+
     (item.stage==='Synthesized'?(item.recallNote?button('Practice recall','review-paper',item.id,'ghost','book'):''):button('Mark read','recall-paper',item.id,'secondary','check'))+'</div>'+
     related.map(n=>'<div class="reading-note">'+button(n.title,'edit',frag('notes',n.id),'ghost','link')+'</div>').join('')+'</div>'+
     '<div class="row-actions">'+iconButton('Add linked note','link','paper-note',item.id)+edit('reading',item)+'</div></div>';
@@ -584,7 +588,8 @@ function editDialog(collection,key='',preset={},isDraft=false) {
     pair(select('Stage','status',draftStages,item.status||'Outline'),select('Roadmap milestone','milestone',refs('milestones'),item.milestone))+
     area('Notes','details',item.details);
   const remove=existing?button('Delete','delete',frag(collection,key),'ghost danger'):'';
-  const title=collection==='tasks'&&taskKind({...item,role:item.role||'Research'})==='deep'?'Plan a research goal':(existing?'Edit ':'Add ')+label;
+  const type=taskKind({...item,role:item.role||'Research'});
+  const title=collection==='tasks'&&type!=='small'?(existing?'Edit ':'Plan ')+(type==='reading'?'a reading block':'a research block'):(existing?'Edit ':'Add ')+label;
   dialog(title,form('record',fields,'Save '+label,remove,frag(collection,key)));
   if(collection==='tasks')syncTaskGoal($('form',modal));
 }
@@ -596,7 +601,7 @@ function selectedFocus(taskId, fromPlan=false) {
   if(f.status!=='idle'||state.support.park||state.support.incubation||(taskId&&!focusableTask(find('tasks',taskId)))) return false;
   f.mode='focus'; f.taskId=taskId; f.freeLabel=''; f.elapsed=0;
   const task=find('tasks',taskId);
-  f.sessionPreset=task?.fiveMinute?5:fromPlan?Math.min(90,num(task?.minutes)):0;
+  f.sessionPreset=task?.fiveMinute?5:fromPlan?num(task?.minutes):0;
   f.remaining=(f.sessionPreset||f.preset)*60;
   return true;
 }
@@ -738,7 +743,7 @@ function saveRecord(formElement,data) {
     const completedSlot=current?.status==='Done'&&item.status==='Done'&&current.planDate;
     if(completedSlot)Object.assign(item,{planDate:current.planDate,planKind:taskKind(current),role:current.role});
     if(item.planDate&&item.planDate!==current?.planDate&&!validDay(item.planDate)) throw Error('Choose a valid work date.');
-    if(taskKind(item)==='deep'&&item.role!=='Research') throw Error('Choose a maintenance task for this role.');
+    if(taskKind(item)!=='small'&&!researchBlock(item)) throw Error('Choose a maintenance task for this role.');
     if(!current&&taskKind(item)==='deep')checkGoalPlan(item);
     if(item.planDate&&!completedSlot){
       ensureSlot(item,item.planDate);
@@ -785,8 +790,8 @@ function openDecompose(milestone='') {
     area('One next action per line','steps','','Open the outline and list three claims\nSummarize the first paper in two sentences',true)+
     pair(field('Minutes for each step','minutes',45,{type:'number',min:1,max:180,required:true}),field('First step work date','date','',{type:'date'}))+
     tick('today','Put the first step in today’s plan',false)+
-    select('Slot for the first step','planKind',dayKinds,'deep')+
-    goalFields({},{title:'Goal setup when reserving a deep research slot'}),'Save actions to Horizon'));
+    select('Block type for the first step','planKind',dayKinds,'deep')+
+    goalFields({},{title:'Goal setup when planning a research block'}),'Save actions to Horizon'));
   syncTaskGoal($('form',modal));
 }
 function shutdownDialog() {
@@ -806,7 +811,7 @@ function shutdownDialog() {
     field('What’s the next small step?','next',candidate?.title||last?.next,{placeholder:'Open the introduction and mark the paragraph to revise',required:true})+
     pair(field('Return date','date',candidate?.planDate>=today()?candidate.planDate:suggestedReturnDay(),{type:'date',required:true}),field('Return time','time',candidate?.startTime||suggestedReturnTime(),{type:'time',required:true}))+
     field('Where or how will you return?','cue',candidate?.returnCue||last?.cue,{placeholder:'At my desk with the notebook open'})+
-    parkedGoalFields(candidate)+tick('switchOff','Switch to quick capture for the rest of the day',false),last?'Save shutdown':'Finish for today'));
+    parkedGoalFields(candidate,null)+tick('switchOff','Switch to quick capture for the rest of the day',false),last?'Save shutdown':'Finish for today'));
 }
 function reflectionDialog() {
   dialog('Reflect privately',form('reflection',txt('Take a moment if it would help. You can leave either prompt blank.','muted')+
@@ -1319,6 +1324,10 @@ const actions={
     dialog(milestone.title,state.tasks.filter(t=>!t.archivedAt&&t.milestone===value).map(t=>taskRow(t,true)).join(''));
   },
   'paper-note':value=>editDialog('notes','',{paper:value}),
+  'plan-reading':key=>{
+    const paper=find('reading',key);
+    if(paper) editDialog('tasks','',{title:paper.title.slice(0,180),role:'Research',planKind:'reading',minutes:defaultBlockMinutes(today(),30),planDate:today(),paper:key,milestone:paper.reviewMilestone});
+  },
   decompose:openDecompose,
   shutdown:shutdownDialog,
   reflect:reflectionDialog,
@@ -1371,7 +1380,7 @@ const actions={
     if(milestoneProject) for(const task of state.tasks) if(task.milestone===key&&!task.project) task.project=milestoneProject;
     if(collection==='milestones') for(const x of [...state.tasks,...state.notes,...state.drafts]) if(x.milestone===key) x.milestone='';
     if(collection==='projects') for(const x of [...state.tasks,...state.milestones]) if(x.project===key) x.project='';
-    if(collection==='reading') for(const x of state.notes) if(x.paper===key) x.paper='';
+    if(collection==='reading') for(const x of [...state.notes,...state.tasks]) if(x.paper===key) x.paper='';
     if(collection==='drafts') for(const x of state.logs) if(x.draft===key) x.draft='';
     closeDialog();commit('Item deleted.');
   },
@@ -1428,7 +1437,7 @@ document.addEventListener('change',event=>{
     if(kind)kind.value='small';
     if(form)syncTaskGoal(form);
   }
-  if(target.name==='planKind'&&target.closest('form'))syncTaskGoal(target.closest('form'));
+  if((target.name==='planKind'||target.name==='returnKind')&&target.form)syncTaskGoal(target.form);
   if(target.matches('[data-move]')) moveCard(target.dataset.move,target.value);
   const parent=target.closest('[data-form="record"]');
   if(parent?.dataset.key?.startsWith('milestones|')&&target.name==='project'){

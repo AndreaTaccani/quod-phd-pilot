@@ -28,6 +28,9 @@ function migrateTasks(tasks) {
   return tasks.map(task=>{
     const {today:pinned,...record}=task;
     record.planDate=validDay(record.planDate)?record.planDate:pinned&&task.status!=='Done'?today():'';
+    if(record.planDate&&researchBlock(record)&&(!Number.isInteger(Number(record.minutes))||Number(record.minutes)<1)){
+      record.minutes=taskKind(record)==='reading'?30:45;
+    }
     return record;
   });
 }
@@ -44,7 +47,7 @@ const dueForReview=t=>!t.archivedAt&&t.status!=='Done'&&Boolean(t.decisionReason
 const roleOfTask=t=>roles.includes(t?.role)?t.role:'Research';
 function currentPlan() {
   return state.tasks.filter(t=>onBoard(t)&&t.planDate===today()).sort((a,b)=>
-    (a.status==='Done')-(b.status==='Done')||Number(taskKind(b)==='deep')-Number(taskKind(a)==='deep')||
+    (a.status==='Done')-(b.status==='Done')||Number(taskKind(a)==='small')-Number(taskKind(b)==='small')||
     Number(Boolean(b.primaryDay===today()))-Number(Boolean(a.primaryDay===today()))||
     (a.startTime||'99:99').localeCompare(b.startTime||'99:99'));
 }
@@ -84,7 +87,7 @@ function resetPlanDialog(key) {
   }
   dialog('Plan a next action',form('reset-plan',field('Concrete next action','title',t.title,{required:true,placeholder:'Variable X · distribution plot'})+
     pair(field('Work date','date',t.planDate>=today()?t.planDate:today(),{type:'date',required:true}),field('Start time','startTime',t.startTime||'',{type:'time'}))+
-    select('Slot','planKind',t.role==='Research'?dayKinds:[dayKinds[1]],taskKind(t))+
+    pair(select('Block type','planKind',researchBlock(t)?dayKinds:[dayKinds[1]],taskKind(t)),field('Planned minutes','minutes',t.minutes||45,{type:'number',min:1,max:720,required:true}))+
     (haveGoalPlan(t)?'<details class="details-options"><summary>Goal setup</summary>'+goalFields(t,{open:taskKind(t)==='deep'})+'</details>':goalFields(t,{open:taskKind(t)==='deep'}))+
     tick('primary','Make this the next step on that day',Boolean(t.primaryDay&&t.primaryDay===t.planDate))+
     (t.date?tick('moveDeadline','Also move the due date',false):'')+
@@ -94,7 +97,7 @@ function resetPlanDialog(key) {
 function rescheduleWork(t,data) {
   if(!validDay(data.date)||data.date<today()) throw Error('Choose today or a future date.');
   if(t.status==='Waiting'){t.date=data.date;touchTask(t);clearDecision(t);return;}
-  const candidate={...t,title:data.title,planDate:data.date,startTime:data.startTime||'',updated:Date.now(),planKind:data.planKind,
+  const candidate={...t,title:data.title,planDate:data.date,startTime:data.startTime||'',updated:Date.now(),planKind:data.planKind,minutes:num(data.minutes),
     doneLooks:data.doneLooks,obstacle:data.obstacle,response:data.response};
   ensureSlot(candidate,data.date);
   Object.assign(t,candidate);
@@ -130,7 +133,7 @@ function frictionDialog(key) {
     txt('It’s understandable if this feels hard to start. Pick a smaller step you could try for five minutes.','muted')+
     select('What feels difficult?','frictionType',frictions.map(([value,label])=>[value,label]),'vague')+
     field('Five-minute action','smallStep',hasText(t.response)?t.response:frictions[0][2],{required:true})+
-    select('Slot','planKind',t.role==='Research'?dayKinds:[dayKinds[1]],taskKind(t))+
+    select('Block type','planKind',researchBlock(t)?dayKinds:[dayKinds[1]],taskKind(t))+
     goalFields(t,{open:taskKind(t)==='deep'})+
     '<div class="inline wrap-inline">'+button('Reset the date','reset-plan',t.id,'ghost','calendar')+'</div>',
     'Save five-minute action','',t.id));
@@ -162,7 +165,8 @@ function estimateHint(tag,minutes,current) {
 }
 function taskPlanningFields(item) {
   const date=item.planDate??'';
-  return select('Slot type','planKind',dayKinds,taskKind({...item,role:item.role||'Research'}))+
+  return select('Block type','planKind',dayKinds,taskKind({...item,role:item.role||'Research'}))+
+    (state.reading.length?'<div data-block-paper hidden>'+select('Reference (optional)','paper',refs('reading'),item.paper)+'</div>':'')+
     goalFields(item,{open:taskKind({...item,role:item.role||'Research'})==='deep'})+
     '<details class="details-options" open><summary>Planning and timing</summary><div class="form-grid">'+
     pair(field('Planned work date','planDate',date,{type:'date'}),field('Planned start time','startTime',item.startTime,{type:'time'}))+
@@ -200,7 +204,7 @@ function startPlanned(key){
 function returnOptions(reference, selected=''){
   const role=roleOfTask(reference);
   const candidates=state.tasks.filter(t=>!t.archivedAt&&t.status==='Next'&&hasText(t.title)&&t.role===role&&
-    (!researchLock||taskKind(t)==='deep')&&(!t.planDate||t.planDate>=today()));
+    (!researchLock||researchBlock(t))&&(!t.planDate||t.planDate>=today()));
   candidates.sort((a,b)=>Number(b.milestone===reference?.milestone)-Number(a.milestone===reference?.milestone)||
     (a.planDate||'9999').localeCompare(b.planDate||'9999')||(a.startTime||'99:99').localeCompare(b.startTime||'99:99'));
   const chosen=find('tasks',selected);
@@ -246,11 +250,11 @@ function scheduleReturn(data, reference) {
     }
     reference=reference||existing;
   }
-  const next={id:id(),title:data.next,role:roleOfTask(reference),status:'Next',minutes:15,planDate,startTime:data.time,
+  const next={id:id(),title:data.next,role:roleOfTask(reference),status:'Next',minutes:num(data.returnMinutes)||15,planDate,startTime:data.time,
     planKind:data.returnKind||taskKind(reference||{role:'Research'}),doneLooks:data.returndoneLooks||reference?.doneLooks,
     obstacle:data.returnobstacle||reference?.obstacle,response:data.returnresponse||reference?.response,
     previousPlanDate:planDate?'':data.date,lastTouched:today(),
-    returnCue:data.cue,milestone:reference?.milestone||'',project:reference?.project||'',parent:reference?.id||'',pilotId:reference?.pilotId||''};
+    returnCue:data.cue,milestone:reference?.milestone||'',project:reference?.project||'',paper:data.returnPaper??reference?.paper??'',parent:reference?.id||'',pilotId:reference?.pilotId||''};
   ensureSlot(next,planDate);
   state.tasks.push(next);
   return next;
@@ -272,7 +276,7 @@ function enterResearch() {
 }
 function lockResearch() {
   const selected=find('tasks',state.focus.taskId);
-  if(selected&&taskKind(selected)!=='deep') selectedFocus('');
+  if(selected&&!researchBlock(selected)) selectedFocus('');
   researchLock=true;state.support.researchLock=true;active='focus';menuOpen=false;quiet=false;
   commit();window.scrollTo(0,0);
 }
@@ -286,7 +290,7 @@ function updateBuffer() {
 }
 function researchRoomView() {
   const tasks=currentPlan().filter(focusableTask);
-  return '<div class="mode-frame"><header class="mode-heading"><span class="soft-icon">'+glyph('leaf',true)+'</span><div class="grow"><h1>Deep research</h1><p class="muted">Research tasks and your timer.</p></div>'+button('Exit research mode','exit-research','','secondary','close')+'</header>'+
+  return '<div class="mode-frame"><header class="mode-heading"><span class="soft-icon">'+glyph('leaf',true)+'</span><div class="grow"><h1>Deep research</h1><p class="muted">Research and reading blocks with your timer.</p></div>'+button('Exit research mode','exit-research','','secondary','close')+'</header>'+
     '<div class="stack">'+timerPanel(true)+panel('Research actions',tasks.length?tasks.map(t=>taskRow(t,true)).join(''):empty('Add a research action to give this block a next step.'),
     {action:button('Add research task','research-add','','secondary','plus')})+'</div></div>';
 }
@@ -530,6 +534,10 @@ function supportChange(target) {
     if(plannedDate)plannedDate.value=t?.planDate>=today()?t.planDate:suggestedReturnDay();
     if(time)time.value=t?.startTime||suggestedReturnTime();
     if(cue)cue.value=t?.returnCue||'';
+    const kind=$('[name=returnKind]',target.form), paper=$('[name=returnPaper]',target.form);
+    if(kind) kind.value=t?taskKind(t):[...kind.options].find(option=>option.defaultSelected)?.value||kind.options[0].value;
+    if(paper) paper.value=t?t.paper||'':[...paper.options].find(option=>option.defaultSelected)?.value||'';
+    syncTaskGoal(target.form);
     for(const [key] of goalPrompts){
       const input=$('[name="return'+key+'"]',target.form);
       if(input) input.value=t?(t[key]??''):input.defaultValue;
@@ -558,7 +566,7 @@ async function supportSubmit(method, target, data) {
   } else if(method==='friction'){
     if(!entry||entry.archivedAt||entry.status==='Done') throw Error('Choose an open task.');
     const date=today();
-    const step={id:id(),title:data.smallStep,minutes:5,role:roleOfTask(entry),status:'Next',milestone:entry.milestone,project:entry.project,
+    const step={id:id(),title:data.smallStep,minutes:5,role:roleOfTask(entry),status:'Next',milestone:entry.milestone,project:entry.project,paper:entry.paper,
       planDate:date,primaryDay:date,parent:entry.id,fiveMinute:true,pilotId:entry.pilotId||'',lastTouched:date,
       planKind:data.planKind,doneLooks:data.doneLooks,obstacle:data.obstacle,response:data.response,
       date:entry.date,reviewedDue:entry.date<today()?entry.date:''};
@@ -724,7 +732,7 @@ function addChapterPilot(target,start) {
     const deep=[0,2,4,7,8].includes(index);
     target.tasks.push({id:id(),title,role,status:'Next',minutes,planDate:shift(start,day),startTime,tag,details,
       milestone:role==='Research'?milestone:'',pilotId,pilotStep:index,
-      planKind:deep?'deep':'small',
+      planKind:tag==='Reading'?'reading':deep?'deep':'small',
       ...(deep?{doneLooks:details,obstacle:index===4?'The solver returns an unexpected error':'I get stuck checking more details than this block needs',
         response:index===4?'Record the configuration for the smaller case':'Write one concrete check in the notebook'}:{})});
   }
@@ -792,8 +800,8 @@ function weekView(){
   const start=validDay(weekStart)?weekStart:startOfWeek(), end=shift(start,6);
   const range=displayDate(start,{month:'short',day:'numeric'})+' to '+displayDate(end,{month:'short',day:'numeric',year:'numeric'});
   const pilot=state.support.pilot;
-  const workLogs=state.workHours.target?workLogsByDay():null;
-  const workDays=workLogs?workHistory(workLogs):null;
+  const workLogs=workLogsByDay();
+  const workDays=workHistory(workLogs);
   const days=Array.from({length:7},(_,i)=>shift(start,i)).map(day=>{
     const tasks=state.tasks.filter(t=>onBoard(t)&&t.planDate===day).sort((a,b)=>
       Number(b.primaryDay===day)-Number(a.primaryDay===day)||(a.startTime||'99:99').localeCompare(b.startTime||'99:99'));
@@ -802,7 +810,7 @@ function weekView(){
     return '<section class="panel week-day'+(day===today()?' week-today':'')+'"><div class="panel-head"><div><h2>'+e(displayDate(day,{weekday:'long'}))+'</h2>'+
       '<time datetime="'+day+'" class="meta">'+e(displayDate(day))+'</time></div>'+
       (day>=today()?iconButton('Add action for '+displayDate(day),'plus','week-add',day):'')+'</div>'+
-      (workLogs?workWeekSummary(day,workLogs,workDays):'')+
+      workWeekSummary(day,tasks,workLogs,workDays)+
       (tasks.length?tasks.map(t=>taskRow(t,false,true)).join(''):empty(weekends?'Rest day':'No work planned'))+
       meeting.map(m=>listRow(m.title,txt(m.attendees),' '+edit('meetings',m),'<span class="soft-icon">'+glyph('people')+'</span>')).join('')+'</section>';
   }).join('');

@@ -18,6 +18,7 @@ function projectsView() {
 }
 
 const workLimit=16*60;
+const defaultResearchBudget=4*60;
 const workWeekdays=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const workMinutes=value=>Number.isInteger(value)&&value>=0&&value<=workLimit?value:null;
 function loadWorkHours(raw) {
@@ -25,8 +26,8 @@ function loadWorkHours(raw) {
   const days={};
   for(const [date,day] of Object.entries(raw?.days??{})){
     if(!validDay(date)) continue;
-    const teaching=workMinutes(day?.teaching), research=workMinutes(day?.research);
-    if(teaching!==null||research!==null) days[date]={teaching,research};
+    const teaching=workMinutes(day?.teaching), research=workMinutes(day?.research), budget=workMinutes(day?.budget);
+    if(teaching!==null||research!==null||budget!==null) days[date]={teaching,research,budget};
   }
   return {target:workMinutes(raw?.target)??0,teaching,days};
 }
@@ -87,6 +88,24 @@ function workDuration(minutes) {
   const hours=Math.floor(minutes/60), remainder=minutes%60;
   return hours?hours+' h'+(remainder?' '+remainder+' min':''):minutes+' min';
 }
+function researchBudget(date,logs=workLogsByDay(),history=workHistory(logs)) {
+  const override=state.workHours.days[date]?.budget;
+  if(override!=null) return override;
+  const day=workDay(date,logs);
+  return suggestWork(day,history)?.minutes??Math.max(0,(state.workHours.target||defaultResearchBudget)-day.teaching);
+}
+function plannedResearchMinutes(tasks) {
+  return tasks.filter(researchBlock).reduce((total,task)=>total+num(task.minutes),0);
+}
+function defaultBlockMinutes(date,minutes) {
+  const booked=plannedResearchMinutes(state.tasks.filter(task=>task.planDate===date&&onBoard(task)));
+  const left=researchBudget(date)-booked;
+  return left>0?Math.min(minutes,left):minutes;
+}
+function researchPlanSummary(tasks,budget) {
+  const planned=plannedResearchMinutes(tasks);
+  return workDuration(planned)+' planned of '+workDuration(budget)+(planned>budget?' · '+workDuration(planned-budget)+' over budget':'');
+}
 function workHoursPanel() {
   const logs=workLogsByDay(), day=workDay(today(),logs), suggestion=suggestWork(day,workHistory(logs));
   const main=day.rest?'Rest day':suggestion?(suggestion.minutes?workDuration(suggestion.minutes)+' suggested for research':'No research time suggested'):'Set a starting target';
@@ -94,13 +113,14 @@ function workHoursPanel() {
   return panel('Work hours',txt(main,'work-hours-value')+
     txt(recorded.join(' · '),'meta')+
     txt(suggestion?.basis||(!state.workHours.target?'Set your usual research hours and add teaching time.':''),'meta compact')+
-    '<div class="inline wrap-inline compact">'+(state.workHours.target?button('Edit today','work-day',day.date,'secondary'):button('Set up work hours','work-hours','','secondary'))+
-    (state.workHours.target?button('Work hours settings','work-hours','','ghost'):'')+'</div>',{className:'subtle'});
+    '<div class="inline wrap-inline compact">'+button('Edit today’s hours','work-day',day.date,'secondary')+
+    button(state.workHours.target?'Work hours settings':'Set up work hours','work-hours','','ghost')+'</div>',{className:'subtle'});
 }
-function workWeekSummary(date,logs,history) {
+function workWeekSummary(date,tasks,logs,history) {
   const day=workDay(date,logs), suggestion=date>=today()?suggestWork(day,history):null;
   const summary=[day.rest?'Rest day':'',day.teaching?workDuration(day.teaching)+' teaching':'',
     suggestion?(suggestion.minutes?workDuration(suggestion.minutes)+' suggested research':'No research time suggested'):'',
+    date>=today()?researchPlanSummary(tasks,researchBudget(date,logs,history)):'',
     day.research!==null?workDuration(day.research)+' research recorded':''].filter(Boolean);
   return '<div class="inline wrap-inline compact work-day-summary">'+txt(summary.join(' · '),'meta')+
     button('Edit hours','work-day',date,'ghost')+'</div>';
@@ -109,7 +129,7 @@ const hoursField=(label,name,value,options={})=>field(label,name,value,{type:'nu
 function workHoursDialog() {
   const {target,teaching}=state.workHours;
   dialog('Work hours settings',form('work-hours',hoursField('Research hours on a day without teaching','target',target?target/60:'',{placeholder:'e.g. 4'})+
-    txt('Set a starting target and your usual teaching hours. Leave the target blank to pause suggestions. Quod learns from timed research focus, effort, and writing entries, or a daily total you enter. Record each block once. Days with no records and rest days stay out of the estimate.','meta')+
+    txt('Quod learns from research time you log or enter as a daily total. It uses your suggested hours as the planning budget for research and reading. Leave the target blank for a starting budget of '+workDuration(defaultResearchBudget)+' before teaching. Days with no records and rest days stay out of the estimate.','meta')+
     '<fieldset class="goal-fields"><legend>Recurring teaching hours</legend><div class="form-pair">'+
     workWeekdays.map((day,index)=>hoursField(day,'teaching'+index,teaching[index]?teaching[index]/60:'',{placeholder:'0'})).join('')+'</div></fieldset>',
     'Save work hours'));
@@ -122,6 +142,8 @@ function workDayDialog(date) {
   dialog('Hours for '+displayDate(date,{weekday:'short',month:'short',day:'numeric'}),form('work-day',
     hoursField('Teaching hours for this date','teaching',override?.teaching!=null?override.teaching/60:'',{placeholder:String(current.teaching/60)})+
     txt('Leave blank to use your recurring hours and teaching logs. Enter 0 if a class is cancelled.','meta')+
+    (date>=today()?hoursField('Research and reading budget (hours)','budget',override?.budget!=null?override.budget/60:'',{placeholder:String(researchBudget(date)/60)})+
+      txt('Leave blank to use Quod’s budget for this date.','meta'):'')+
     (canRecord?field('Actual research minutes (optional)','research',override?.research,{type:'number',min:0,max:workLimit,placeholder:current.research??''})+
       txt('A daily total replaces time from your logs for this date. Enter 0 to record a day with no research.','meta'):'')+
     (workRestDay(date)?txt('This date is marked as rest and stays out of the estimate.','meta'):''),'Save day','',date));
@@ -142,8 +164,9 @@ function saveWorkHours(method,target,data) {
     if(!validDay(date)) throw Error('Choose a valid date.');
     const teaching=minutes(data.teaching,60);
     const research=date<=today()?minutes(data.research,1):null;
-    if(teaching===null&&research===null) delete state.workHours.days[date];
-    else state.workHours.days[date]={teaching,research};
+    const budget=date>=today()?minutes(data.budget,60):state.workHours.days[date]?.budget??null;
+    if(teaching===null&&research===null&&budget===null) delete state.workHours.days[date];
+    else state.workHours.days[date]={teaching,research,budget};
   }
   closeDialog();
   commit('Work hours saved.');
