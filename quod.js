@@ -13,8 +13,10 @@ const missingGoalPrompt=t=>goalPrompts.find(([key])=>!hasText(t[key]));
 const onBoard=t=>Boolean(t&&!t.archivedAt&&['Next','Done'].includes(t.status));
 const taskKind=t=>dayKinds.some(([kind])=>kind===t?.planKind)?t.planKind:(t?.role==='Research'?'deep':'small');
 const researchBlock=t=>t?.role==='Research';
+const planGroup=t=>researchBlock(t)?(taskKind(t)==='reading'?'reading':'deep'):'small';
+const openAction=t=>Boolean(t&&!t.archivedAt&&t.status==='Next');
 const haveGoalPlan=t=>!missingGoalPrompt(t);
-const canWork=t=>Boolean(onBoard(t)&&t.status==='Next'&&t.planDate===today());
+const canWork=t=>openAction(t)&&t.planDate===today();
 const focusableTask=t=>canWork(t)&&(!researchLock||researchBlock(t));
 const touchTask=(t,day=today())=>{t.lastTouched=day;};
 const workdayStamp=(value)=>typeof value==='number'&&Number.isFinite(value)?localDate(new Date(value)):'';
@@ -98,10 +100,11 @@ function refreshBoard(target) {
 }
 function slotRows() {
   const work=currentPlan();
-  return [['deep','Research','Add research block'],['reading','Reading','Add reading block'],['small','Maintenance','Add a small task']].map(([kind,name,label])=>{
-    const slots=work.filter(t=>(researchBlock(t)?(taskKind(t)==='reading'?'reading':'deep'):'small')===kind);
+  return [['deep','Research','Start a research block','Add research block'],['reading','Reading','Start a reading block','Add reading block'],['small','Maintenance','Start a small task','Add a small task']].map(([kind,name,start,add])=>{
+    const slots=work.filter(t=>planGroup(t)===kind);
     return '<div class="slot-group"><div class="slot-head"><h3>'+e(name)+'</h3>'+
-      (kind!=='small'||slots.length<maintenanceLimit?button(label,'new-slot',kind,'ghost','plus'):'')+'</div>'+
+      '<div class="inline wrap-inline slot-head-actions">'+button(start,'choose-start-block',kind,'secondary','play')+
+      (kind!=='small'||slots.length<maintenanceLimit?button(add,'new-slot',kind,'ghost','plus'):'')+'</div></div>'+
       slots.map(t=>taskRow(t)).join('')+'</div>';
   }).join('');
 }

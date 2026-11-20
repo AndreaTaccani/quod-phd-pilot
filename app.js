@@ -212,7 +212,7 @@ function listRow(title, line='', actions='', visual='') {
 function filters(values, current, action) {
   return '<div class="filters">'+values.map(value=>'<button type="button" class="chip-button'+(current===value?' selected':'')+'" aria-pressed="'+(current===value)+'" data-action="'+action+'" data-value="'+e(value)+'">'+e(value)+'</button>').join('')+'</div>';
 }
-function taskRow(task, detail=false, showTime=false) {
+function taskRow(task, detail=false, showTime=false, {startNow=false}={}) {
   const completed=task.status==='Done';
   const milestone=find('milestones',task.milestone);
   const project=detail?taskProject(task):null;
@@ -225,8 +225,9 @@ function taskRow(task, detail=false, showTime=false) {
     ((detail||task.planDate===today())&&taskKind(task)==='deep'&&task.doneLooks?txt('Done when · '+task.doneLooks,'meta format'):'')+
     (detail?txt(task.details,'meta format')+obstacleLine(task):'')+
     ((detail||task.planDate===today())&&task.returnCue?txt('Return cue · '+task.returnCue,'meta format'):'')+'</div>'+
+    (startNow&&openAction(task)?iconButton('Start '+task.title+' now','play','start-now',task.id):'')+
     (task.minutes?'<span class="task-time">'+glyph('clock')+e(task.minutes)+' min</span>':'')+
-    (completed?'':'<div class="row-actions">'+iconButton('Plan '+task.title,'calendar','reset-plan',task.id)+(canWork(task)?iconButton('Focus on '+task.title,'play','focus-task',task.id):'')+'</div>')+'</div>';
+    (completed?'':'<div class="row-actions">'+iconButton('Plan '+task.title,'calendar','reset-plan',task.id)+(!startNow&&canWork(task)?iconButton('Focus on '+task.title,'play','focus-task',task.id):'')+'</div>')+'</div>';
 }
 function focusState() {
   const f=state.focus;
@@ -274,7 +275,7 @@ function tasksView() {
   return heading('Horizon','Keep future work, dependencies, and ideas here until you choose a work date.',button('Add an action','new','tasks','primary','plus'))+
     filters(['All roles',...roles],taskFilter.role,'role-filter')+filters(['All statuses',...taskStages],taskFilter.stage,'task-filter')+
     (['Teaching','Service'].includes(taskFilter.role)?'<div class="flow-toolbar">'+button('Switch to deep research','research','','secondary','leaf')+'</div>':'')+
-    '<div class="grid"><div class="stack">'+panel('Actions',filtered.length?filtered.map(t=>taskRow(t,true)).join(''):empty('No actions in this view.'))+archivePanel()+'</div>'+
+    '<div class="grid"><div class="stack">'+panel('Actions',filtered.length?filtered.map(t=>taskRow(t,true,false,{startNow:true})).join(''):empty('No actions in this view.'))+archivePanel()+'</div>'+
     '<div class="stack">'+panel('Break down a goal',txt('Name the larger goal, then write the actions you can start in one sitting.','muted')+'<div class="compact">'+button('Break down a goal','decompose','','secondary','spark')+'</div>',{className:'subtle'})+
     decisionDrawer()+(planQueue()||'')+inboxMarkup()+panel('Waiting on',state.tasks.filter(t=>!t.archivedAt&&t.status==='Waiting').map(t=>listRow(t.title,txt(t.waiting||'Dependency unspecified')+txt(t.date?'Follow up '+displayDate(t.date):''),edit('tasks',t))).join('')||empty('No tasks are waiting.'))+'</div></div>';
 }
@@ -1165,6 +1166,7 @@ async function handleSubmit(target) {
   if(await quodSubmit(method,target,data)) return;
   if(await supportSubmit(method,target,data)) return;
   if(method==='record') return saveRecord(target,data);
+  if(method==='start-now') return startExisting(target.dataset.key,data);
   if(method==='work-hours'||method==='work-day') return saveWorkHours(method,target,data);
   if(method==='settings'){
     if(data.shield==='on'&&data.shutdown===data.resume) throw Error('Choose different shield and resume times.');

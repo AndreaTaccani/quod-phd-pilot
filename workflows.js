@@ -201,6 +201,55 @@ function startPlanned(key){
   if(selectedFocus(key,true)){go('focus');startTimer();}
 }
 
+function chooseStartBlock(kind) {
+  const label=dayKinds.find(([key])=>key===kind)?.[1].toLowerCase();
+  if(!label) return;
+  const choices=state.tasks.filter(t=>openAction(t)&&t.planDate!==today()&&planGroup(t)===kind)
+    .sort((a,b)=>(a.planDate||'9999').localeCompare(b.planDate||'9999')||a.title.localeCompare(b.title));
+  dialog('Start a '+label,
+    (choices.length?txt('Choose a block from Horizon to move it to Today and start the timer.','muted')+
+      choices.map(t=>listRow(t.title,txt([t.minutes?workDuration(num(t.minutes)):'',
+        t.planDate?'Planned for '+displayDate(t.planDate):'',taskProject(t)?.title].filter(Boolean).join(' · ')),
+        button('Start now','start-now',t.id,'secondary','play'))).join(''):
+      empty('There are no available '+label+'s in Horizon.'))+
+    '<div class="form-actions">'+cancel()+'</div>');
+}
+
+function startExisting(key,data) {
+  const task=find('tasks',key), focus=state.focus;
+  if(!openAction(task)) throw Error('Choose an available action.');
+  if(shieldOn()||state.support.incubation||researchLock&&!researchBlock(task)) return;
+  if(state.support.park) return closeParkDialog();
+  if(focus.status!=='idle'){
+    if(modal.open) closeDialog();
+    go('focus');
+    if(focus.mode==='focus'&&focus.taskId===key){
+      if(focus.status==='paused') startTimer();
+    } else notify('Finish the current session before starting another block.');
+    return;
+  }
+  const day=today();
+  try {
+    rescheduleWork(task,{title:data?.title??task.title,minutes:data?.minutes??task.minutes,
+      planKind:taskKind(task),date:day,startTime:task.planDate===day?task.startTime:'',primary:task.primaryDay===day?'on':'',
+      doneLooks:data?.doneLooks??task.doneLooks,obstacle:data?.obstacle??task.obstacle,response:data?.response??task.response});
+  } catch(error) {
+    if(data) throw error;
+    dialog('Start this action',form('start-now',txt('Set up this action for Today.','muted')+
+      field('Concrete action','title',task.title,{required:true})+
+      field('Planned minutes','minutes',num(task.minutes)|| (researchBlock(task)?30:15),{type:'number',min:1,max:researchBlock(task)?720:smallLimit,required:true})+
+      (taskKind(task)==='deep'&&!haveGoalPlan(task)?goalFields(task):''),'Start now','',task.id));
+    const editor=$('form',modal);
+    if(!(error instanceof GoalPlanError&&showGoalError(editor,error))){
+      formError(editor,error.message);
+      if(hasText(task.title)) $('[name=minutes]',editor).focus();
+    }
+    return;
+  }
+  if(modal.open) closeDialog();
+  startPlanned(key);
+}
+
 function returnOptions(reference, selected=''){
   const role=roleOfTask(reference);
   const candidates=state.tasks.filter(t=>!t.archivedAt&&t.status==='Next'&&hasText(t.title)&&t.role===role&&
@@ -644,6 +693,8 @@ const supportActions={
   'pilot-setup':pilotSetup,
   'pilot-review':pilotReflectionDialog,
   'start-planned':startPlanned,
+  'start-now':key=>startExisting(key),
+  'choose-start-block':chooseStartBlock,
   'all-tasks':()=>{taskFilter={role:'All roles',stage:'All statuses'};go('tasks');},
   'reload-storage':()=>confirm('Load the saved workspace?','Export a backup first if you want to keep changes from this tab.','reload-storage-confirm','','Load saved workspace'),
   'reload-storage-confirm':()=>location.reload(),
