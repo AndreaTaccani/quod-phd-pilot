@@ -527,6 +527,7 @@ function formError(target,message) {
   else notify(message);
 }
 const fieldNames={tasks:['task','Task'],projects:['project','Project'],milestones:['milestone','Milestone'],reading:['reference','Reference'],notes:['note','Note'],pipeline:['pipeline item','Pipeline item'],meetings:['meeting','Meeting'],logs:['log entry','Log entry'],drafts:['draft','Draft']};
+const milestonePurposePrompt=project=>project?'How will this milestone move the project forward?':'Connect this milestone to the purpose of the thesis.';
 const prepDefault='42 | Request recommendation letters\n21 | Draft the narrative and budget\n7 | Ask a colleague to review the application';
 function editDialog(collection,key='',preset={},isDraft=false) {
   if(!fieldNames[collection]) return;
@@ -552,7 +553,7 @@ function editDialog(collection,key='',preset={},isDraft=false) {
     (state.projects.length?select('Project','project',refs('projects'),item.project):'')+
     select('Type','kind',['Milestone','Chapter'],item.kind||'Milestone')+
     field('Research question','question',item.question,{placeholder:'What are we trying to understand?',maxLength:300})+
-    area('Why does this matter?','purpose',item.purpose,'Connect this milestone to the purpose of the thesis.')+
+    area('Why does this matter?','purpose',item.purpose,milestonePurposePrompt(item.project))+
     area('What counts as done?','details',item.details,'List the criteria, approvals, or deliverables.');
   if(collection==='reading') fields+=
     field('Authors','authors',item.authors,{placeholder:'Separate authors with “and”',maxLength:500})+
@@ -1430,6 +1431,9 @@ document.addEventListener('change',event=>{
   if(target.name==='planKind'&&target.closest('form'))syncTaskGoal(target.closest('form'));
   if(target.matches('[data-move]')) moveCard(target.dataset.move,target.value);
   const parent=target.closest('[data-form="record"]');
+  if(parent?.dataset.key?.startsWith('milestones|')&&target.name==='project'){
+    $('textarea[name=purpose]',parent).placeholder=milestonePurposePrompt(target.value);
+  }
   if(parent?.dataset.key?.startsWith('pipeline|')&&target.name==='kind'){
     const is=isGrant({kind:target.value});
     const stage=$('[name=status]',parent);
