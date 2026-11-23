@@ -181,6 +181,9 @@ let active='today';
 let menuOpen=false;
 let quiet=false;
 let taskFilter={role:'All roles',stage:'All statuses'};
+let horizonQuery='';
+const taskPages={actions:0,decide:0,archive:0};
+const taskPageSize=40;
 let readFilter='All';
 let pipelineFilter='Publications & conferences';
 let logFilter='All entries';
@@ -276,14 +279,76 @@ function dash() {
 }
 
 
+function pagedTaskList(items,key,label,format) {
+  const last=Math.max(0,Math.ceil(items.length/taskPageSize)-1);
+  const page=taskPages[key]=Math.max(0,Math.min(last,taskPages[key]));
+  const start=page*taskPageSize;
+  const end=Math.min(start+taskPageSize,items.length);
+  const rows=items.slice(start,end).map(format).join('');
+  if(!last) return rows;
+  const controls=position=>'<nav class="inline wrap-inline" aria-label="'+e(label+' pages '+position)+'">'+
+    (page>0?button('Previous','task-page',key+'|-1','ghost'):'')+
+    (page<last?button('Next','task-page',key+'|1','ghost'):'')+'</nav>';
+  return '<div class="task-page-bar"><p class="meta" tabindex="-1" data-task-page-start="'+key+'">'+
+    (start+1)+'–'+end+' of '+items.length+' '+e(label)+'</p>'+controls('before list')+'</div>'+rows+
+    '<div class="task-page-bar task-page-bottom">'+controls('after list')+'</div>';
+}
+function horizonMatches() {
+  const terms=horizonQuery.normalize('NFKC').toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const projects=terms.length?new Map(state.projects.map(project=>[project.id,project.title])):null;
+  const milestones=terms.length?new Map(state.milestones.map(milestone=>[milestone.id,milestone])):null;
+  return state.tasks.filter(task=>{
+    if(task.archivedAt||taskFilter.role!=='All roles'&&task.role!==taskFilter.role||taskFilter.stage!=='All statuses'&&task.status!==taskFilter.stage) return false;
+    if(!terms.length) return true;
+    const milestone=milestones.get(task.milestone);
+    const project=projects.get(task.project)||projects.get(milestone?.project);
+    const text=[task.title,task.details,task.tag,task.waiting,task.doneLooks,task.returnCue,project,milestone?.title].join(' ').normalize('NFKC').toLowerCase();
+    return terms.every(term=>text.includes(term));
+  });
+}
+function horizonActionRows(items) {
+  if(!items.length){
+    taskPages.actions=0;
+    return empty(horizonQuery.trim()?'No actions match your search and filters.':'No actions in this view.');
+  }
+  return pagedTaskList(items,'actions','actions',task=>taskRow(task,true,false,{startNow:true}));
+}
+const horizonMatchText=items=>horizonQuery.trim()?items.length+' matching '+(items.length===1?'action':'actions'):'';
+function updateHorizonActions() {
+  const items=horizonMatches();
+  $('#horizon-results',workspace).innerHTML=horizonActionRows(items);
+  $('#horizon-match-count',workspace).textContent=horizonMatchText(items);
+}
+function changeTaskPage(value) {
+  const [key,direction]=value.split('|');
+  if(!Object.hasOwn(taskPages,key)||!['-1','1'].includes(direction)) return;
+  taskPages[key]+=Number(direction);
+  if(key==='actions') updateHorizonActions();
+  else {
+    render();
+    const drawer=$('details[data-task-drawer="'+key+'"]',workspace);
+    if(drawer) drawer.open=true;
+  }
+  $('[data-task-page-start="'+key+'"]',workspace)?.focus();
+}
+function openHorizon(stage='All statuses') {
+  taskFilter={role:'All roles',stage};
+  horizonQuery='';
+  taskPages.actions=0;
+  go('tasks');
+}
 function tasksView() {
-  const filtered=state.tasks.filter(t=>!t.archivedAt&&(taskFilter.role==='All roles'||t.role===taskFilter.role)&&(taskFilter.stage==='All statuses'||t.status===taskFilter.stage));
+  const filtered=horizonMatches();
+  const waiting=state.tasks.filter(t=>!t.archivedAt&&t.status==='Waiting');
+  const search=field('Search actions','horizonSearch',horizonQuery,{type:'search',placeholder:'Search titles, notes, or projects'});
   return heading('Horizon','Keep future work, dependencies, and ideas here until you choose a work date.',button('Add an action','new','tasks','primary','plus'))+
     filters(['All roles',...roles],taskFilter.role,'role-filter')+filters(['All statuses',...taskStages],taskFilter.stage,'task-filter')+
     (['Teaching','Service'].includes(taskFilter.role)?'<div class="flow-toolbar">'+button('Switch to deep research','research','','secondary','leaf')+'</div>':'')+
-    '<div class="grid"><div class="stack">'+panel('Actions',filtered.length?filtered.map(t=>taskRow(t,true,false,{startNow:true})).join(''):empty('No actions in this view.'))+archivePanel()+'</div>'+
+    '<div class="grid"><div class="stack">'+panel('Actions',search+'<p class="meta" id="horizon-match-count" role="status">'+e(horizonMatchText(filtered))+'</p>'+
+    '<div id="horizon-results">'+horizonActionRows(filtered)+'</div>')+archivePanel()+'</div>'+
     '<div class="stack">'+panel('Break down a goal',txt('Name the larger goal, then write the actions you can start in one sitting.','muted')+'<div class="compact">'+button('Break down a goal','decompose','','secondary','spark')+'</div>',{className:'subtle'})+
-    decisionDrawer()+(planQueue()||'')+inboxMarkup()+panel('Waiting on',state.tasks.filter(t=>!t.archivedAt&&t.status==='Waiting').map(t=>listRow(t.title,txt(t.waiting||'Dependency unspecified')+txt(t.date?'Follow up '+displayDate(t.date):''),edit('tasks',t))).join('')||empty('No tasks are waiting.'))+'</div></div>';
+    decisionDrawer()+(planQueue()||'')+inboxMarkup()+panel('Waiting on',waiting.slice(0,5).map(t=>listRow(t.title,txt(t.waiting||'Dependency unspecified')+txt(t.date?'Follow up '+displayDate(t.date):''),edit('tasks',t))).join('')||empty('No tasks are waiting.'),
+    {action:waiting.length>5?button('View all waiting','waiting-tasks','','ghost'):''})+'</div></div>';
 }
 function roadmapView() {
   const items=[...state.milestones].sort(dateOrder);
@@ -1273,6 +1338,11 @@ document.addEventListener('submit',async event=>{
 });
 document.addEventListener('input',event=>{
   const input=event.target;
+  if(input.name==='horizonSearch'&&input.closest('#workspace')){
+    horizonQuery=input.value;
+    taskPages.actions=0;
+    updateHorizonActions();
+  }
   if(input.matches('[aria-describedby="goal-field-error"]')&&hasText(input.value)) clearGoalError(input.form);
 });
 async function copyDigest() {
@@ -1321,8 +1391,10 @@ const actions={
   edit:value=>editDialog(...split(value)),
   close:closeDialog,
   submit:(_value,buttonElement)=>buttonElement.closest('form')?.requestSubmit(),
-  'role-filter':value=>{taskFilter.role=value;render();},
-  'task-filter':value=>{taskFilter.stage=value;render();},
+  'role-filter':value=>{taskFilter.role=value;taskPages.actions=0;render();},
+  'task-filter':value=>{taskFilter.stage=value;taskPages.actions=0;render();},
+  'task-page':changeTaskPage,
+  'waiting-tasks':()=>openHorizon('Waiting'),
   'read-filter':value=>{readFilter=value;render();},
   'pipeline-filter':value=>{pipelineFilter=value;render();},
   'log-filter':value=>{logFilter=value;render();},

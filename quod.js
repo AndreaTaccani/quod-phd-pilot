@@ -167,14 +167,14 @@ const decisionText={
 function decisionDrawer(){
   const pending=state.tasks.filter(t=>!t.archivedAt&&t.decisionReason&&['Next','Waiting'].includes(t.status));
   if(!pending.length) return '';
-  return '<details class="decision-drawer"><summary>Decide<span class="decision-dot" aria-label="Decisions available"></span></summary>'+
-    '<div class="decision-content">'+pending.sort((a,b)=>(a.decisionDay||'').localeCompare(b.decisionDay||'')).map(t=>{
+  return '<details class="decision-drawer" data-task-drawer="decide"><summary>Decide<span class="decision-dot" aria-label="Decisions available"></span></summary>'+
+    '<div class="decision-content">'+pagedTaskList(pending.sort((a,b)=>(a.decisionDay||'').localeCompare(b.decisionDay||'')),'decide','decisions',t=>{
       const old=t.decisionReason==='compost';
       const small=button(old?'Make a 15-minute starter':'Make it smaller','decision-smaller',t.id,'secondary','spark');
       const defer=old?'':button('Defer','decision-defer',t.id,'ghost','calendar');
       return '<article class="decision-row"><div><h4>'+e(t.title)+'</h4>'+txt(decisionText[t.decisionReason])+'</div>'+
         '<div class="inline wrap-inline">'+small+defer+button(old?'Compost':'Drop','archive-work',t.id,'ghost')+'</div></article>';
-    }).join('')+'</div></details>';
+    })+'</div></details>';
 }
 function decisionSmaller(key) {
   const t=find('tasks',key);
@@ -212,9 +212,9 @@ function archiveWork(t, reason='Dropped') {
 function archivePanel(){
   const archived=state.tasks.filter(t=>t.archivedAt);
   if(!archived.length)return '';
-  return '<details class="decision-drawer"><summary>Archive</summary><div class="decision-content">'+archived.map(t=>
+  return '<details class="decision-drawer" data-task-drawer="archive"><summary>Archive</summary><div class="decision-content">'+pagedTaskList(archived,'archive','archived tasks',t=>
     listRow(t.title,txt([t.archiveReason,displayDate(t.archivedAt)].filter(Boolean).join(' · ')),
-      button('Restore to Horizon','restore-work',t.id,'secondary'))).join('')+'</div></details>';
+      button('Restore to Horizon','restore-work',t.id,'secondary')))+'</div></details>';
 }
 function finishFeed() {
   const finished=state.logs.filter(l=>!l.private&&(['Task done','Milestone done','Chapter cleared'].includes(l.kind)||(l.kind==='Focus'&&l.blockCompleted)));

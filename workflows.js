@@ -695,7 +695,7 @@ const supportActions={
   'start-planned':startPlanned,
   'start-now':key=>startExisting(key),
   'choose-start-block':chooseStartBlock,
-  'all-tasks':()=>{taskFilter={role:'All roles',stage:'All statuses'};go('tasks');},
+  'all-tasks':()=>openHorizon(),
   'reload-storage':()=>confirm('Load the saved workspace?','Export a backup first if you want to keep changes from this tab.','reload-storage-confirm','','Load saved workspace'),
   'reload-storage-confirm':()=>location.reload(),
   'reset-plan':resetPlanDialog,
