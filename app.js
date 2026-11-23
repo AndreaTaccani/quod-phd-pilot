@@ -4,9 +4,11 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const workspace = $('#workspace');
 const modal = $('#modal');
 const pilotLaunch=document.querySelector('meta[name="fieldnote-pilot-start"]')?.content||'';
-const pilotInvite=new URLSearchParams(location.search).get('pilot')==='1';
+const query=new URLSearchParams(location.search);
+const exampleWorkspace=query.get('demo')==='1';
+const pilotInvite=!exampleWorkspace&&query.get('pilot')==='1';
 const staticPilotHost=Boolean(document.querySelector('meta[name="quod-static-pilot"]'));
-const STORE = staticPilotHost?'quod.phd-pilot.v1':'fieldnote.phd.v1'+(pilotLaunch?'.pilot.'+pilotLaunch:'');
+const STORE = (staticPilotHost?'quod.phd-pilot.v1':'fieldnote.phd.v1'+(pilotLaunch?'.pilot.'+pilotLaunch:''))+(exampleWorkspace?'.example':'');
 const roles = ['Research','Teaching','Service','Personal'];
 const taskStages = ['Next','Waiting','Done'];
 const milestoneStages = ['Planned','In progress','Waiting','Done'];
@@ -133,6 +135,10 @@ function makeSample() {
   return s;
 }
 const collections=['tasks','milestones','reading','notes','pipeline','meetings','logs','drafts','projects'];
+function invalidScheduleFields(item) {
+  return ['date','decisionDay','reviewDue','startTime'].filter(field=>item[field]!=null&&item[field]!==''&&
+    !(field==='startTime'?validTime(item[field]):validDay(item[field])));
+}
 function validated(data) {
   if (!data || data.version!==1 || !Array.isArray(data.rest)) throw Error('Choose a Quod JSON backup.');
   const records={projects:[],...data};
@@ -140,8 +146,7 @@ function validated(data) {
     const items=records[key];
     if(!Array.isArray(items)||!items.every(item=>item&&typeof item==='object'&&typeof item.id==='string'&&typeof item.title==='string')) throw Error('Choose a Quod JSON backup.');
     if(new Set(items.map(item=>item.id)).size!==items.length) throw Error('This backup contains duplicate records in '+key+'. Choose another backup.');
-    if(items.some(item=>['date','decisionDay','reviewDue'].some(field=>item[field]!=null&&item[field]!==''&&!validDay(item[field]))||
-      item.startTime!=null&&item.startTime!==''&&!validTime(item.startTime))) throw Error('This backup contains an invalid date or time in '+key+'. Choose another backup.');
+    if(items.some(item=>invalidScheduleFields(item).length)) throw Error('This backup contains an invalid date or time in '+key+'. Choose another backup.');
   }
   const sectionIds=new Set();
   for(const project of records.projects){
@@ -158,23 +163,29 @@ function validated(data) {
   if(!['idle','running','paused'].includes(focus.status)||!['focus','break'].includes(focus.mode)||!Number.isFinite(focus.remaining)||!Number.isFinite(focus.end)) Object.assign(focus,focusDefaults());
   return {...blank(),...Object.fromEntries(collections.map(key=>[key,records[key]])),tasks:migrateTasks(data.tasks),rest:data.rest.filter(validDay),sample:data.sample===true,settings:{name:String(config.name||'').slice(0,80),goal:num(config.goal),shutdown:validTime(config.shutdown)?config.shutdown:'17:00',weekends:config.weekends!==false,shield:config.shield===true,shieldWeekends:config.shieldWeekends!==false,resume:validTime(config.resume)?config.resume:'08:30'},focus,support:loadSupport(data.support),workHours:loadWorkHours(data.workHours)};
 }
-let stored=true,loadError=false,storageRaw=null,storageIssue='';
+let stored=true,loadError=false,storageRaw=null,storageIssue='',starterOnly=false;
 function loadState(){
   try {
     storageRaw=localStorage.getItem(STORE);
-    if(storageRaw) return validated(JSON.parse(storageRaw));
-    return validDay(pilotLaunch)?addChapterPilot(blank(),pilotLaunch):pilotInvite?blank():makeSample();
+    if(storageRaw!==null){
+      const saved=validated(JSON.parse(storageRaw));
+      starterOnly=staticPilotHost&&!exampleWorkspace&&saved.sample&&!workspaceHasWork(saved);
+      return starterOnly?blank():saved;
+    }
+    if(exampleWorkspace) return makeSample();
+    return validDay(pilotLaunch)?addChapterPilot(blank(),pilotLaunch):staticPilotHost||pilotInvite?blank():makeSample();
   } catch {
-    loadError=true;stored=false;storageIssue='Saved data could not be read. Restore a backup or start a new workspace.';
-    return makeSample();
+    loadError=true;stored=false;storageIssue='Quod couldn’t open the saved workspace in this browser.';
+    return blank();
   }
 }
 let state=loadState();
+let checkingRecovery=staticPilotHost&&!exampleWorkspace&&!loadError&&(storageRaw===null||starterOnly);
 researchLock=state.support.researchLock;
 function save(replace=false){
   try {
     refreshBoard(state);
-    if(loadError&&!replace) return;
+    if((loadError||checkingRecovery||recoveryAvailable)&&!replace) return;
     const saved=localStorage.getItem(STORE);
     if(!replace&&saved!==storageRaw){
       stored=false;storageIssue='Saved data changed in another tab. Back up work from this tab before loading the saved workspace.';
@@ -182,7 +193,8 @@ function save(replace=false){
     }
     const next=JSON.stringify(state);
     if(next!==saved) localStorage.setItem(STORE,next);
-    storageRaw=next;stored=true;loadError=false;storageIssue='';
+    storageRaw=next;stored=true;loadError=false;storageIssue='';starterOnly=false;
+    rememberWorkspace(next);
   } catch {
     stored=false;storageIssue='Browser storage is unavailable. Download a backup before closing.';
     notify(storageIssue);
@@ -529,9 +541,10 @@ function settingsView() {
     '<div>'+button('Save preferences','submit','','primary')+'</div></form>')+
     panel('Research work hours',button('Work hours settings','work-hours','','secondary'))+
     panel('Back up & export',txt('Workspace data stays in this browser. Use a JSON backup to move it to another device, copy, or browser.','muted')+
-    '<div class="inline wrap-inline section-gap">'+button('JSON backup','backup','','primary','download')+button('Restore backup','restore','','secondary')+button('Markdown','markdown-export','','secondary')+
+    '<div class="inline wrap-inline section-gap">'+button('JSON backup','backup','','primary','download')+button('Recover workspace','recover-workspace','','secondary')+button('Restore backup','restore','','secondary')+button('Markdown','markdown-export','','secondary')+
     button('CSV','csv-export','','secondary')+button('BibTeX','bib-export','','secondary')+button('Calendar','calendar-export','','secondary')+button('Academic CV','cv-export','','secondary')+'</div>')+
-    panel('Start with a template',txt('The starter data shows a chapter roadmap, micro-tasks, reading, and a supervisor meeting. A blank workspace has the same tools.','muted')+'<div class="inline wrap-inline section-gap">'+button('Start blank','reset','blank','secondary')+button('Load example workspace','reset','sample','secondary')+'</div>')+
+    panel('Workspace setup',txt('The example opens separately from this workspace.','muted')+'<div class="inline wrap-inline section-gap">'+button('Start blank','reset','blank','secondary')+
+      (exampleWorkspace?'<a class="btn secondary" href="?">Open my workspace</a>':'<a class="btn secondary" href="?demo=1">Open example workspace</a>')+'</div>')+
     panel('One-week thesis pilot',txt('Try the workflow on a chapter with planned research, a draft, and a supervisor check-in.','muted')+
     '<div class="inline wrap-inline compact">'+button(state.support.pilot?'Open pilot week':'Add a pilot week','pilot-setup','','secondary','map')+pilotFeedbackLink()+'</div>')+
     panel('Off-hours & quick capture',txt('Keep ideas in the capture inbox during off-hours. Set a schedule in Workspace preferences.','muted')+
@@ -555,13 +568,27 @@ function render() {
   document.body.classList.toggle('focus-mode',quiet);
   document.body.classList.toggle('restricted-mode',viewMode!=='normal');
   document.title=(viewMode==='shield'?'Off the clock':viewMode==='incubation'?'Stepping away':viewMode==='research'?'Deep research':pageNames[active])+' · Quod';
+  if(checkingRecovery){
+    workspace.innerHTML='<main id="main" class="main"><p role="status">Checking this browser for saved work…</p></main>';
+    return;
+  }
+  if(loadError||recoveryAvailable){
+    workspace.innerHTML='<main id="main" class="main">'+heading('Recover your workspace',loadError?storageIssue:'A saved copy is available in this browser.')+
+      panel('Recovery options',txt('Check for a saved copy in this browser, download the original data if available, or restore a JSON backup.','muted')+
+        '<div class="inline wrap-inline compact">'+button('Recover workspace','recover-workspace','','primary')+button('Restore JSON backup','restore','','secondary')+
+        button('Start blank','reset','blank','ghost')+'</div>')+'</main>';
+    return;
+  }
   if(viewMode!=='normal'){
     workspace.innerHTML='<main id="main" class="main">'+(viewMode==='shield'?shieldView():viewMode==='incubation'?incubationView(state.support.incubation):researchRoomView())+'</main>';
     return;
   }
   workspace.innerHTML='<div class="shell">'+nav()+'<div class="body">'+header()+
     (menuOpen?'<button class="side-scrim mobile-only" type="button" data-action="menu" aria-label="Close menu"></button>':'')+
-    '<main id="main" class="main">'+(!stored?'<div class="callout warning storage-warning">'+e(storageIssue)+'<div class="inline wrap-inline compact">'+button('Download backup','backup','','secondary','download')+(storageRaw!==null&&!loadError?button('Load saved workspace','reload-storage','','secondary'):'')+'</div></div>':'')+views[active]()+'</main></div></div>';
+    '<main id="main" class="main">'+(!stored?'<div class="callout warning storage-warning">'+e(storageIssue)+'<div class="inline wrap-inline compact">'+button('Download backup','backup','','secondary','download')+(storageRaw!==null?button('Load saved workspace','reload-storage','','secondary'):'')+'</div></div>':'')+
+    (exampleWorkspace?'<div class="callout">Example workspace <a class="inline-link" href="?">Open my workspace</a></div>':'')+
+    (starterOnly?'<div class="callout">This browser had only the starter example. If you expected your work, check recovery.'+
+      '<div class="compact">'+button('Recover workspace','recover-workspace','','secondary')+'</div></div>':'')+views[active]()+'</main></div></div>';
 }
 function go(page) {
   if (!views[page]||shieldOn()||(researchLock&&page!=='focus')) return;
@@ -1346,8 +1373,7 @@ async function handleSubmit(target) {
       closeDialog();return commit(added?added+' '+(added===1?'reference':'references')+' imported.':'These references are already in your queue.');
     }
     const backup=validated(JSON.parse(contents));
-    confirm('Replace this workspace?','This backup has '+backup.tasks.length+' tasks, '+backup.reading.length+' references, and '+backup.logs.length+' log entries. Replacing will remove the data you currently see.','restore-confirm','','Restore workspace');
-    pendingImport=backup;
+    previewRestore(backup);
   }
 }
 const pendingForms=new WeakSet();
@@ -1532,18 +1558,18 @@ const actions={
   'calendar-export':calendarExport,
   'bib-import':()=>fileDialog('bib'),
   restore:()=>fileDialog('restore'),
-  'restore-confirm':()=>{
-    if(zoteroBusy) return notify('Wait for the Zotero sync to finish before restoring.');
-    if(!pendingImport) return;
-    leaveRoom(false);researchLock=false;zoom='day';
-    state=pendingImport;researchLock=state.support.researchLock;closeDialog();commit('Workspace restored.',true);
+  'recover-workspace':openRecovery,
+  'recover-copy':value=>{
+    const copy=recoveryOptions[Number(value)];
+    if(copy?.workspace) previewRestore(copy.workspace,copy.repaired);
   },
-  reset:value=>confirm('Replace this workspace?', 'Your current records will be replaced. Export a JSON backup first if you want to keep them.','reset-confirm',value,value==='blank'?'Start blank':'Load example'),
-  'reset-confirm':value=>{
-    if(zoteroBusy) return notify('Wait for the Zotero sync to finish before restarting.');
-    leaveRoom(false);researchLock=false;zoom='day';
-    state=value==='blank'?blank():makeSample();closeDialog();commit(value==='blank'?'Blank workspace ready.':'Example workspace loaded.',true);
+  'recover-download':value=>{
+    const copy=recoveryOptions[Number(value)];
+    if(copy?.raw) download(exportName('-original.json'),copy.raw,'application/json;charset=utf-8');
   },
+  'restore-confirm':()=>replaceWorkspace(pendingImport,'Workspace restored.'),
+  reset:()=>confirm('Replace this workspace?', 'Start a blank workspace? Export a JSON backup first if you want a file copy of your current work.','reset-confirm','blank','Start blank'),
+  'reset-confirm':()=>replaceWorkspace(blank(),'Blank workspace ready.'),
   zotero:zoteroDialog,
   'zotero-push':(_value,element)=>performZotero(element.closest('form'),'push'),
   'zotero-create':(_value,element)=>performZotero(element.closest('form'),'create'),
@@ -1642,9 +1668,17 @@ window.addEventListener('storage',event=>{
   render();
 });
 render();
-if(loadError) notify('Your saved workspace could not be read. Restore a JSON backup from Settings.');
-else {save(); if(!stored) render();}
-clockTick();
-if(pilotInvite&&!modal.open&&!loadError&&viewMode==='normal')joinPilotDialog();
+if(!loadError&&(!staticPilotHost||exampleWorkspace||storageRaw!==null&&!starterOnly)){save(); if(!stored) render();}
+const offerPilot=()=>{if(pilotInvite&&!modal.open&&!loadError&&!recoveryAvailable&&viewMode==='normal')joinPilotDialog();};
+if(checkingRecovery){
+  getRecoveryOptions().then(copies=>{
+    recoveryAvailable=copies.some(copy=>copy.workspace&&workspaceHasWork(copy.workspace));
+  }).catch(()=>{}).finally(()=>{
+    checkingRecovery=false;
+    render();
+    offerPilot();
+  });
+} else offerPilot();
+if(!loadError) clockTick();
 setInterval(clockTick,500);
 if(location.protocol!=='file:'&&'serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
