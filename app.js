@@ -135,7 +135,13 @@ const collections=['tasks','milestones','reading','notes','pipeline','meetings',
 function validated(data) {
   if (!data || data.version!==1 || !Array.isArray(data.rest)) throw Error('Choose a Quod JSON backup.');
   const records={projects:[],...data};
-  if(!collections.every(key=>Array.isArray(records[key])&&records[key].every(item=>item&&typeof item==='object'&&typeof item.id==='string'&&typeof item.title==='string'))) throw Error('Choose a Quod JSON backup.');
+  for(const key of collections){
+    const items=records[key];
+    if(!Array.isArray(items)||!items.every(item=>item&&typeof item==='object'&&typeof item.id==='string'&&typeof item.title==='string')) throw Error('Choose a Quod JSON backup.');
+    if(new Set(items.map(item=>item.id)).size!==items.length) throw Error('This backup contains duplicate records in '+key+'. Choose another backup.');
+    if(items.some(item=>['date','decisionDay','reviewDue'].some(field=>item[field]!=null&&item[field]!==''&&!validDay(item[field]))||
+      item.startTime!=null&&item.startTime!==''&&!validTime(item.startTime))) throw Error('This backup contains an invalid date or time in '+key+'. Choose another backup.');
+  }
   const config=data.settings||{};
   const focus={...focusDefaults(),...data.focus};
   if(!['idle','running','paused'].includes(focus.status)||!['focus','break'].includes(focus.mode)||!Number.isFinite(focus.remaining)||!Number.isFinite(focus.end)) Object.assign(focus,focusDefaults());
@@ -1246,17 +1252,24 @@ async function handleSubmit(target) {
     pendingImport=backup;
   }
 }
-document.addEventListener('submit',event=>{
+const pendingForms=new WeakSet();
+document.addEventListener('submit',async event=>{
   const target=event.target;
   if(!target.matches('[data-form]')) return;
   event.preventDefault();
+  if(pendingForms.has(target)) return;
+  pendingForms.add(target);
   const notice=$('[data-error]',target);
   if(notice) notice.hidden=true;
   clearGoalError(target);
-  handleSubmit(target).catch(error=>{
+  try{
+    await handleSubmit(target);
+  } catch(error) {
     if(error instanceof GoalPlanError&&showGoalError(target,error)) return;
     formError(target,error.message||'Could not save this change.');
-  });
+  } finally {
+    pendingForms.delete(target);
+  }
 });
 document.addEventListener('input',event=>{
   const input=event.target;
