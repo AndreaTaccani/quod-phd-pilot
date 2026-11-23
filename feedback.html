@@ -7,33 +7,44 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Pilot feedback · Quod</title>
 <link rel="icon" href="./icon.png">
-<link rel="stylesheet" href="./welcome.css">
-<script src="./pilot-feedback.js" defer></script>
+<link rel="stylesheet" href="./welcome.css?v=11">
+<script src="./pilot-feedback.js?v=11" defer></script>
 </head>
 <body>
 <header class="top"><a class="brand" href="./">Quod</a><a class="button secondary" href="./app.html">Open Quod</a></header>
 <main class="feedback-main">
   <section class="feedback-card" aria-labelledby="feedback-title">
     <h1 id="feedback-title">Pilot feedback</h1>
-    <p>Two short answers about your week with Quod.</p>
+    <p>Two short answers about your week with Quod. You can copy them into webmail when you’re ready.</p>
     <form id="pilot-feedback" autocomplete="off">
       <label for="helped">What helped you finish?</label>
       <textarea id="helped" rows="4" maxlength="1200" required></textarea>
       <label for="barrier">What got in the way?</label>
       <textarea id="barrier" rows="4" maxlength="1200" required></textarea>
+      <details class="feedback-optional">
+        <summary>Three optional questions</summary>
+        <div class="feedback-questions">
+          <label for="restart">If work carried over, what was it like to restart using Decide?</label>
+          <textarea id="restart" rows="2" maxlength="600"></textarea>
+          <label for="devices">Did you try using Quod on another device? What were you trying to do?</label>
+          <textarea id="devices" rows="2" maxlength="600"></textarea>
+          <label for="switching">When, if ever, did you want to go back to your previous way of working?</label>
+          <textarea id="switching" rows="2" maxlength="600"></textarea>
+        </div>
+      </details>
       <p class="feedback-hint">Keep the answers about using Quod. Leave out unpublished research and other people’s names.</p>
       <button class="button secondary" type="submit" disabled>Prepare feedback email</button>
       <noscript><p><a href="mailto:Andrea.Taccani@mathematik.uni-regensburg.de?subject=Quod%20one-week%20pilot%20feedback">Email the pilot organizer</a></p></noscript>
     </form>
     <div class="feedback-result" id="feedback-result" hidden>
       <h2 id="draft-title" tabindex="-1">Your email draft</h2>
-      <p>Open the draft in your email app or copy the answers into webmail. You’ll send it from your own address.</p>
+      <p>Copy your answers into webmail or open the draft in your email app. Send it when you’re ready.</p>
       <label class="feedback-address">To <a href="mailto:Andrea.Taccani@mathematik.uni-regensburg.de" id="feedback-recipient">Andrea.Taccani@mathematik.uni-regensburg.de</a></label>
       <label for="feedback-draft">Feedback text</label>
       <textarea id="feedback-draft" rows="7" readonly></textarea>
       <div class="pilot-links">
-        <a class="button primary" id="feedback-email">Open email draft</a>
-        <button class="button secondary" id="feedback-copy" type="button">Copy feedback</button>
+        <button class="button primary" id="feedback-copy" type="button">Copy for webmail</button>
+        <a class="button secondary" id="feedback-email">Open email draft</a>
       </div>
     </div>
     <p id="feedback-status" role="status"></p>

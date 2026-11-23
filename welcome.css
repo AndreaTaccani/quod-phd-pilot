@@ -11,3 +11,7 @@
 .evidence-preview p{color:#526459;max-width:66ch}
 .evidence-preview .button{flex-shrink:0}
 @media(max-width:625px){.evidence-preview{align-items:flex-start;flex-direction:column;margin-top:26px}}
+
+.feedback-optional{width:100%;margin:5px 0;padding:10px 12px;border:1px solid #dce5da;border-radius:8px}
+.feedback-optional summary{cursor:pointer;font-weight:650;color:var(--green)}
+.feedback-questions{display:grid;gap:8px;margin-top:12px}
