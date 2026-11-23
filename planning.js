@@ -3,16 +3,55 @@
 function taskProject(task) {
   return find('projects',task.project)||find('projects',find('milestones',task.milestone)?.project);
 }
+function taskProjectSection(task, project=taskProject(task)) {
+  if(!project||!task.section) return null;
+  return arr(project.sections).find(section=>section.id===task.section)||null;
+}
+function projectSectionChoices(project) {
+  return [['','No section'],...arr(find('projects',project)?.sections).map(section=>[section.id,section.title])];
+}
+function taskSectionField(task) {
+  if(!state.projects.some(project=>arr(project.sections).length)) return '';
+  const project=taskProject(task);
+  const choices=projectSectionChoices(project?.id);
+  return '<div data-task-section'+(choices.length===1?' hidden':'')+'>'+select('Project section','section',choices,task.section)+'</div>';
+}
+function syncTaskSection(form) {
+  const wrapper=$('[data-task-section]',form);
+  if(!wrapper) return;
+  const section=$('[name=section]',wrapper);
+  const project=$('[name=project]',form)?.value||find('milestones',$('[name=milestone]',form).value)?.project;
+  const choices=projectSectionChoices(project);
+  section.innerHTML=options(choices,section.value);
+  wrapper.hidden=choices.length===1;
+}
+function projectTaskList(tasks,label='Actions') {
+  if(!tasks.length) return '';
+  return '<details class="details-options compact"><summary>'+e(label)+' ('+tasks.length+')</summary>'+tasks.map(task=>taskRow(task,true)).join('')+'</details>';
+}
 function projectsView() {
   const items=[...state.projects].sort((a,b)=>(a.status==='Done')-(b.status==='Done')||a.title.localeCompare(b.title));
+  const groups=new Map();
+  for(const task of state.tasks){
+    if(task.archivedAt) continue;
+    const project=taskProject(task);
+    if(!project) continue;
+    const section=taskProjectSection(task,project);
+    const key=section||project;
+    if(!groups.has(key)) groups.set(key,[]);
+    groups.get(key).push(task);
+  }
   return heading('Projects','Organize your PhD into smaller pieces of work.',button('Add project','new','projects','primary','plus'))+
     '<div class="stack">'+(items.map(project=>{
       const milestones=state.milestones.filter(m=>m.project===project.id).sort(dateOrder);
-      const tasks=state.tasks.filter(t=>!t.archivedAt&&taskProject(t)?.id===project.id);
-      const showTasks=tasks.length?'<details class="details-options compact"><summary>Actions ('+tasks.length+')</summary>'+tasks.map(t=>taskRow(t,true)).join('')+'</details>':'';
+      const sections=arr(project.sections);
+      const nested=sections.map(section=>'<section class="project-section" data-project-section="'+e(section.id)+'"><div class="project-section-head"><h3>'+e(section.title)+'</h3>'+
+        '<div class="inline wrap-inline">'+button('Add action','section-action',section.id,'ghost','plus')+edit('projectSections',section)+'</div></div>'+
+        projectTaskList(groups.get(section)||[])+'</section>').join('');
       return panel(project.title,txt(project.outcome,'format muted')+'<div class="inline wrap-inline compact">'+badge(project.status||'Planned')+
-        button('Add milestone','project-milestone',project.id,'secondary','plus')+button('Add action','project-action',project.id,'secondary','plus')+'</div>'+
-        (milestones.length?'<div class="compact">'+milestones.map(m=>listRow(m.title,txt([m.status,displayDate(m.date)].filter(Boolean).join(' · '),'meta'),edit('milestones',m))).join('')+'</div>':'')+showTasks,
+        button('Add section','project-section',project.id,'secondary','plus')+button('Add milestone','project-milestone',project.id,'secondary','plus')+button('Add action','project-action',project.id,'secondary','plus')+'</div>'+
+        (milestones.length?'<div class="compact">'+milestones.map(m=>listRow(m.title,txt([m.status,displayDate(m.date)].filter(Boolean).join(' · '),'meta'),edit('milestones',m))).join('')+'</div>':'')+
+        nested+projectTaskList(groups.get(project)||[],sections.length?'Unsectioned actions':'Actions'),
         {action:edit('projects',project)});
     }).join('')||panel('Start a project',empty('Add a project for a paper, a thesis chapter, or an experiment. You can link existing work from its editor.')))+'</div>';
 }

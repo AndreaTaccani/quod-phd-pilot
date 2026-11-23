@@ -1,6 +1,6 @@
 'use strict';
-const cacheName='quod-phd-pilot-shell-v13';
-const files=["./","./index.html","./welcome.html","./app.html","./research.html","./manifest.webmanifest","./app.css?v=13","./quod.js?v=13","./workflows.js?v=13","./planning.js?v=13","./app.js?v=13","./welcome.css?v=13","./research.css","./pilot-feedback.js?v=13","./forest.jpg","./icon.png","./icon-512.png","./feedback.html"];
+const cacheName='quod-phd-pilot-shell-v14';
+const files=["./","./index.html","./welcome.html","./app.html","./research.html","./manifest.webmanifest","./app.css?v=14","./quod.js?v=14","./workflows.js?v=14","./planning.js?v=14","./app.js?v=14","./welcome.css?v=14","./research.css","./pilot-feedback.js?v=14","./forest.jpg","./icon.png","./icon-512.png","./feedback.html"];
 self.addEventListener('install',event=>event.waitUntil(caches.open(cacheName).then(cache=>cache.addAll(files.map(url=>new Request(url,{cache:'reload'})))).then(()=>self.skipWaiting())));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('quod-phd-pilot-shell-')&&key!==cacheName).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{

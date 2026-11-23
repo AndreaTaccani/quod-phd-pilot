@@ -85,7 +85,8 @@ const thisWeek = date => date >= startOfWeek() && date <= today();
 const dateOrder = (a,b) => (a.date||'9999').localeCompare(b.date||'9999');
 const recentOrder = (a,b) => (b.date||'').localeCompare(a.date||'') || (b.created||0)-(a.created||0);
 const minutesLabel = minutes => minutes >= 60 ? Math.floor(minutes/60)+'h'+(minutes%60?' '+minutes%60+'m':'') : minutes+'m';
-const find = (collection,key) => state[collection].find(item=>item.id===key);
+const collectionItems = collection => collection==='projectSections'?state.projects.flatMap(project=>arr(project.sections)):state[collection];
+const find = (collection,key) => collectionItems(collection).find(item=>item.id===key);
 function focusDefaults() { return {preset:25, breakPreset:5, sessionPreset:0, mode:'focus', taskId:'', freeLabel:'', status:'idle', remaining:1500, elapsed:0, anchor:0, end:0}; }
 function blank() {
   return {version:1,tasks:[],projects:[],milestones:[],reading:[],notes:[],pipeline:[],meetings:[],logs:[],drafts:[],rest:[],settings:{name:'',goal:750,shutdown:'17:00',weekends:true,...shieldDefaults()},focus:focusDefaults(),support:supportDefaults(),workHours:loadWorkHours(),sample:false};
@@ -141,6 +142,16 @@ function validated(data) {
     if(new Set(items.map(item=>item.id)).size!==items.length) throw Error('This backup contains duplicate records in '+key+'. Choose another backup.');
     if(items.some(item=>['date','decisionDay','reviewDue'].some(field=>item[field]!=null&&item[field]!==''&&!validDay(item[field]))||
       item.startTime!=null&&item.startTime!==''&&!validTime(item.startTime))) throw Error('This backup contains an invalid date or time in '+key+'. Choose another backup.');
+  }
+  const sectionIds=new Set();
+  for(const project of records.projects){
+    if(project.sections==null) continue;
+    if(!Array.isArray(project.sections)) throw Error('This backup contains invalid project sections. Choose another backup.');
+    for(const section of project.sections){
+      if(!section||typeof section.id!=='string'||typeof section.title!=='string'||section.project!==project.id||sectionIds.has(section.id))
+        throw Error('This backup contains an invalid project section. Choose another backup.');
+      sectionIds.add(section.id);
+    }
   }
   const config=data.settings||{};
   const focus={...focusDefaults(),...data.focus};
@@ -225,10 +236,12 @@ function taskRow(task, detail=false, showTime=false, {startNow=false}={}) {
   const completed=task.status==='Done';
   const milestone=find('milestones',task.milestone);
   const project=detail?taskProject(task):null;
+  const section=taskProjectSection(task,project);
   return '<div class="task-row'+(completed?' done':'')+'"><button type="button" class="task-check" aria-label="Done: '+e(task.title)+'" aria-pressed="'+completed+'" data-action="toggle-task" data-value="'+e(task.id)+'">'+(completed?glyph('check'):'')+'</button><div class="grow"><button class="task-title" type="button" data-action="edit" data-value="'+e(frag('tasks',task.id))+'">'+e(task.title)+'</button><div class="task-meta">'+badge(taskKind(task)==='reading'?'Reading':task.role||'Research',lower(task.role||''))+
     (task.status==='Waiting'?badge(task.waiting?'Waiting on '+task.waiting:'Waiting','wait'):'')+
     (detail&&milestone?badge(milestone.title,'neutral'):'')+
     (project?badge(project.title,'neutral'):'')+
+    (section?badge(section.title,'neutral'):'')+
     (detail&&task.repeat&&task.repeat!=='None'?badge(task.repeat,'neutral'):'')+taskSupportMeta(task,detail,showTime)+
     (detail&&task.date?'<span class="meta">'+e(displayDate(task.date,{month:'short',day:'numeric',year:'numeric'}))+'</span>':'')+'</div>'+
     ((detail||task.planDate===today())&&taskKind(task)==='deep'&&task.doneLooks?txt('Done when · '+task.doneLooks,'meta format'):'')+
@@ -297,12 +310,15 @@ function horizonMatches() {
   const terms=horizonQuery.normalize('NFKC').toLowerCase().trim().split(/\s+/).filter(Boolean);
   const projects=terms.length?new Map(state.projects.map(project=>[project.id,project.title])):null;
   const milestones=terms.length?new Map(state.milestones.map(milestone=>[milestone.id,milestone])):null;
+  const sections=terms.length?new Map(collectionItems('projectSections').map(section=>[section.id,section])):null;
   return state.tasks.filter(task=>{
     if(task.archivedAt||taskFilter.role!=='All roles'&&task.role!==taskFilter.role||taskFilter.stage!=='All statuses'&&task.status!==taskFilter.stage) return false;
     if(!terms.length) return true;
     const milestone=milestones.get(task.milestone);
-    const project=projects.get(task.project)||projects.get(milestone?.project);
-    const text=[task.title,task.details,task.tag,task.waiting,task.doneLooks,task.returnCue,project,milestone?.title].join(' ').normalize('NFKC').toLowerCase();
+    const project=projects.has(task.project)?task.project:milestone?.project;
+    const section=sections.get(task.section);
+    const text=[task.title,task.details,task.tag,task.waiting,task.doneLooks,task.returnCue,projects.get(project),milestone?.title,
+      section?.project===project?section?.title:''].join(' ').normalize('NFKC').toLowerCase();
     return terms.every(term=>text.includes(term));
   });
 }
@@ -340,7 +356,7 @@ function openHorizon(stage='All statuses') {
 function tasksView() {
   const filtered=horizonMatches();
   const waiting=state.tasks.filter(t=>!t.archivedAt&&t.status==='Waiting');
-  const search=field('Search actions','horizonSearch',horizonQuery,{type:'search',placeholder:'Search titles, notes, or projects'});
+  const search=field('Search actions','horizonSearch',horizonQuery,{type:'search',placeholder:'Search titles, notes, projects, or sections'});
   return heading('Horizon','Keep future work, dependencies, and ideas here until you choose a work date.',button('Add an action','new','tasks','primary','plus'))+
     filters(['All roles',...roles],taskFilter.role,'role-filter')+filters(['All statuses',...taskStages],taskFilter.stage,'task-filter')+
     (['Teaching','Service'].includes(taskFilter.role)?'<div class="flow-toolbar">'+button('Switch to deep research','research','','secondary','leaf')+'</div>':'')+
@@ -602,7 +618,7 @@ function formError(target,message) {
   if(where){where.textContent=message; where.hidden=false;}
   else notify(message);
 }
-const fieldNames={tasks:['task','Task'],projects:['project','Project'],milestones:['milestone','Milestone'],reading:['reference','Reference'],notes:['note','Note'],pipeline:['pipeline item','Pipeline item'],meetings:['meeting','Meeting'],logs:['log entry','Log entry'],drafts:['draft','Draft']};
+const fieldNames={tasks:['task','Task'],projects:['project','Project'],projectSections:['section','Section'],milestones:['milestone','Milestone'],reading:['reference','Reference'],notes:['note','Note'],pipeline:['pipeline item','Pipeline item'],meetings:['meeting','Meeting'],logs:['log entry','Log entry'],drafts:['draft','Draft']};
 const milestonePurposePrompt=project=>project?'How will this milestone move the project forward?':'Connect this milestone to the purpose of the thesis.';
 const prepDefault='42 | Request recommendation letters\n21 | Draft the narrative and budget\n7 | Ask a colleague to review the application';
 function editDialog(collection,key='',preset={},isDraft=false) {
@@ -611,10 +627,12 @@ function editDialog(collection,key='',preset={},isDraft=false) {
   if(key&&!existing) return;
   const item=isDraft?{...existing,...preset}:{...preset,...existing};
   const [label,headingLabel]=fieldNames[collection];
-  let fields=field(collection==='tasks'?'Concrete action':'Title','title',item.title,{required:true,placeholder:collection==='tasks'?'Chapter 2 · three claims to outline':''});
+  let fields=field(collection==='tasks'?'Concrete action':collection==='projectSections'?'Section name':'Title','title',item.title,{required:true,
+    placeholder:collection==='tasks'?'Chapter 2 · three claims to outline':collection==='projectSections'?'Part I · Foundations':''});
   if(collection==='tasks') fields+=
     pair(select('Role','role',researchLock?['Research']:roles,item.role||'Research'),field('Estimated minutes','minutes',item.minutes??45,{type:'number',min:1,max:720}))+
     (state.projects.length?select('Project','project',[['','Use the milestone’s project, if any'],...refs('projects').slice(1)],item.project):'')+
+    taskSectionField(item)+
     taskPlanningFields(item)+
     '<details class="details-options"'+(item.date||item.status==='Waiting'||item.repeat&&item.repeat!=='None'?' open':'')+'><summary>Due dates, links and other details</summary><div class="form-grid">'+
     pair(select('Status','status',taskStages,item.status||'Next'),field('Due or follow-up date','date',item.date,{type:'date'}))+
@@ -624,6 +642,7 @@ function editDialog(collection,key='',preset={},isDraft=false) {
     (preset.fromCapture?'<input type="hidden" name="fromCapture" value="'+e(preset.fromCapture)+'">':'');
   if(collection==='projects') fields+=select('Status','status',milestoneStages,item.status||'Planned')+
     area('What do you want this project to produce?','outcome',item.outcome,'A preprint, a chapter draft, or a validated method');
+  if(collection==='projectSections') fields+='<input type="hidden" name="project" value="'+e(item.project)+'">';
   if(collection==='milestones') fields+=
     pair(field('Target date','date',item.date,{type:'date'}),select('Status','status',milestoneStages,item.status||'Planned'))+
     (state.projects.length?select('Project','project',refs('projects'),item.project):'')+
@@ -809,7 +828,17 @@ function saveRecord(formElement,data) {
   if(collection==='tasks') requireActionText(data.title);
   else if(!hasText(data.title)) throw Error('Enter a title.');
   const item={...current,...data,id:key||id(),title:data.title.trim(),updated:Date.now()};
+  if(collection==='projectSections'){
+    item.project=current?.project||item.project;
+    if(!find('projects',item.project)) throw Error('Choose an existing project for this section.');
+  }
   if(collection==='tasks'){
+    if(!Object.hasOwn(data,'section')) delete item.section;
+    if(item.section){
+      const section=taskProjectSection(item);
+      if(!section) throw Error('Choose a section in this project.');
+      item.project=section.project;
+    }
     item.minutes=num(item.minutes);
     item.actualMinutes=num(data.actualMinutes);
     const completedSlot=current?.status==='Done'&&item.status==='Done'&&current.planDate;
@@ -851,7 +880,11 @@ function saveRecord(formElement,data) {
     item.minutes=num(item.minutes); item.words=num(item.words); item.private=data.private==='on'; item.created=current?.created||Date.now();
     if(item.minutes!==num(current?.minutes)) delete item.seconds;
   }
-  if(current) state[collection]=state[collection].map(x=>x.id===key?item:x);
+  if(collection==='projectSections'){
+    const project=find('projects',item.project);
+    const sections=arr(project.sections);
+    project.sections=current?sections.map(section=>section.id===key?item:section):[...sections,item];
+  } else if(current) state[collection]=state[collection].map(x=>x.id===key?item:x);
   else state[collection].push(item);
   closeDialog();
   commit(fieldNames[collection][1]+' saved.');
@@ -933,15 +966,15 @@ function download(name,content,type='text/plain;charset=utf-8') {
 const exportName = suffix => 'quod-'+today()+suffix;
 const markdownLine = text => String(text??'').replace(/\r?\n/g,' ').trim();
 function markdownExport() {
-  const sections=[['Projects','projects'],['Roadmap','milestones'],['Tasks','tasks'],['Reading queue','reading'],['Linked notes','notes'],['Academic pipeline','pipeline'],['Advisor meetings','meetings'],['Research log','logs'],['Drafts','drafts'],['Quick captures','captures']];
-  const titleMap={project:'projects',milestone:'milestones',task:'tasks',paper:'reading',draft:'drafts'};
+  const sections=[['Projects','projects'],['Project sections','projectSections'],['Roadmap','milestones'],['Tasks','tasks'],['Reading queue','reading'],['Linked notes','notes'],['Academic pipeline','pipeline'],['Advisor meetings','meetings'],['Research log','logs'],['Drafts','drafts'],['Quick captures','captures']];
+  const titleMap={project:'projects',section:'projectSections',milestone:'milestones',task:'tasks',paper:'reading',draft:'drafts'};
   const labels={details:'Notes',doneDate:'Completed',rest:'Rest',url:'URL',doi:'DOI'};
-  const ignored=new Set(['id','title','created','updated','completion','spawned','spawnedFrom','readLog','cvEntry','bib','zotero','extracted','progress','next','cue']);
+  const ignored=new Set(['id','title','sections','created','updated','completion','spawned','spawnedFrom','readLog','cvEntry','bib','zotero','extracted','progress','next','cue']);
   const lines=['# Quod workspace','', 'Exported '+today(), '', 'Weekly word goal · '+state.settings.goal,
     'Shutdown · '+state.settings.shutdown, 'Writing rest days · '+state.rest.join(', '), ''];
   for(const [title,collection] of sections) {
     lines.push('## '+title,'');
-    for(const item of (collection==='captures'?state.support.captures:state[collection])){
+    for(const item of (collection==='captures'?state.support.captures:collectionItems(collection))){
       lines.push('### '+markdownLine(item.title),'');
       for(const [key,value] of Object.entries(item)) {
         if(ignored.has(key)||value===''||value===undefined||value===null||value===false||value===0) continue;
@@ -960,8 +993,8 @@ function csvExport() {
     return '"'+safe.replaceAll('"','""')+'"';
   }
   const rows=[];
-  for(const collection of collections) for(const item of state[collection]) {
-    rows.push({collection,...Object.fromEntries(Object.entries(item).filter(([key])=>key!=='zotero').map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):value]))});
+  for(const collection of [...collections,'projectSections']) for(const item of collectionItems(collection)) {
+    rows.push({collection,...Object.fromEntries(Object.entries(item).filter(([key])=>key!=='zotero'&&key!=='sections').map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):value]))});
   }
   for(const item of state.support.captures) rows.push({collection:'captures',...item});
   for(const date of state.rest) rows.push({collection:'rest',date});
@@ -1403,6 +1436,11 @@ const actions={
   'toggle-task':toggleTask,
   'project-milestone':value=>editDialog('milestones','',{project:value}),
   'project-action':value=>editDialog('tasks','',{project:value}),
+  'project-section':value=>editDialog('projectSections','',{project:value}),
+  'section-action':value=>{
+    const section=find('projectSections',value);
+    if(section) editDialog('tasks','',{project:section.project,section:section.id});
+  },
   'work-hours':workHoursDialog,
   'work-day':workDayDialog,
   'milestone-task':value=>editDialog('tasks','',{milestone:value}),
@@ -1457,16 +1495,31 @@ const actions={
   },
   delete:value=>{
     const [collection,key]=split(value), item=find(collection,key);
-    if(item) confirm('Delete '+fieldNames[collection][0]+'?',collection==='projects'?'Delete '+item.title+'? Its milestones and actions will stay in your workspace.':item.title+' will be removed from this workspace.','delete-confirm',value,'Delete');
+    if(!item) return;
+    const message=collection==='projects'?'Delete '+item.title+' and its sections? Its milestones and actions will stay in your workspace.':
+      collection==='projectSections'?'Delete '+item.title+'? Its actions will stay in the project.':item.title+' will be removed from this workspace.';
+    confirm('Delete '+fieldNames[collection][0]+'?',message,'delete-confirm',value,'Delete');
   },
   'delete-confirm':value=>{
     const [collection,key]=split(value);
+    const item=find(collection,key);
+    if(!item) return closeDialog();
     const milestoneProject=collection==='milestones'?find('milestones',key)?.project:'';
-    state[collection]=state[collection].filter(x=>x.id!==key);
+    if(collection==='projectSections'){
+      const project=find('projects',item.project);
+      project.sections=arr(project.sections).filter(section=>section.id!==key);
+      for(const task of state.tasks) if(task.section===key) task.section='';
+    } else state[collection]=state[collection].filter(x=>x.id!==key);
     if(collection==='tasks'&&state.focus.taskId===key&&state.focus.status==='idle') state.focus.taskId='';
     if(milestoneProject) for(const task of state.tasks) if(task.milestone===key&&!task.project) task.project=milestoneProject;
     if(collection==='milestones') for(const x of [...state.tasks,...state.notes,...state.drafts]) if(x.milestone===key) x.milestone='';
-    if(collection==='projects') for(const x of [...state.tasks,...state.milestones]) if(x.project===key) x.project='';
+    if(collection==='projects'){
+      const sections=new Set(arr(item.sections).map(section=>section.id));
+      for(const x of [...state.tasks,...state.milestones]){
+        if(x.project===key) x.project='';
+        if(sections.has(x.section)) x.section='';
+      }
+    }
     if(collection==='reading') for(const x of [...state.notes,...state.tasks]) if(x.paper===key) x.paper='';
     if(collection==='drafts') for(const x of state.logs) if(x.draft===key) x.draft='';
     closeDialog();commit('Item deleted.');
@@ -1527,6 +1580,7 @@ document.addEventListener('change',event=>{
   if((target.name==='planKind'||target.name==='returnKind')&&target.form)syncTaskGoal(target.form);
   if(target.matches('[data-move]')) moveCard(target.dataset.move,target.value);
   const parent=target.closest('[data-form="record"]');
+  if(parent?.dataset.key?.startsWith('tasks|')&&['project','milestone'].includes(target.name)) syncTaskSection(parent);
   if(parent?.dataset.key?.startsWith('milestones|')&&target.name==='project'){
     $('textarea[name=purpose]',parent).placeholder=milestonePurposePrompt(target.value);
   }

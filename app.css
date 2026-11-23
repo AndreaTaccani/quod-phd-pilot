@@ -104,6 +104,9 @@ dialog[data-locked] [data-action=close] { display:none; }
 .task-page-bar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:4px 12px; padding:6px 0; }
 .task-page-bottom { justify-content:flex-end; border-top:1px solid var(--line); }
 [data-task-page-start] { scroll-margin-block:85px 12px; }
+.project-section { margin:13px 0 0; padding:10px 12px; border:1px solid var(--line); border-radius:9px; }
+.project-section-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:4px 10px; }
+.project-section-head h3 { overflow-wrap:anywhere; }
 .slot-empty { padding:4px 0 12px; }
 .slot-group .task-row { padding:8px 0; }
 .goal-fields { min-width:0; padding:11px 12px 13px; display:grid; gap:10px; margin:0; border:1px solid #d9e7db; border-radius:10px; background:#f2f6f0; }

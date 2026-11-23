@@ -170,7 +170,7 @@ function taskPlanningFields(item) {
     goalFields(item,{open:taskKind({...item,role:item.role||'Research'})==='deep'})+
     '<details class="details-options" open><summary>Planning and timing</summary><div class="form-grid">'+
     pair(field('Planned work date','planDate',date,{type:'date'}),field('Planned start time','startTime',item.startTime,{type:'time'}))+
-    pair(field('Work tag','tag',item.tag,{placeholder:'Drafting or DataCleaning',maxLength:48}),field('Actual total minutes','actualMinutes',item.actualMinutes,{type:'number',min:1,max:10080}))+
+    pair(field('Work tag','tag',item.tag,{placeholder:'Drafting or DataCleaning',maxLength:48}),field('Actual total minutes','actualMinutes',num(item.actualMinutes)||'',{type:'number',min:1,max:10080}))+
     '<div data-estimate-hint>'+estimateHint(item.tag,item.minutes??45,item)+'</div></div></details>';
 }
 function taskSupportMeta(t,detail,showTime=false) {
@@ -209,7 +209,7 @@ function chooseStartBlock(kind) {
   dialog('Start a '+label,
     (choices.length?txt('Choose a block from Horizon to move it to Today and start the timer.','muted')+
       choices.map(t=>listRow(t.title,txt([t.minutes?workDuration(num(t.minutes)):'',
-        t.planDate?'Planned for '+displayDate(t.planDate):'',taskProject(t)?.title].filter(Boolean).join(' · ')),
+        t.planDate?'Planned for '+displayDate(t.planDate):'',taskProject(t)?.title,taskProjectSection(t)?.title].filter(Boolean).join(' · ')),
         button('Start now','start-now',t.id,'secondary','play'))).join(''):
       empty('There are no available '+label+'s in Horizon.'))+
     '<div class="form-actions">'+cancel()+'</div>');
@@ -303,7 +303,7 @@ function scheduleReturn(data, reference) {
     planKind:data.returnKind||taskKind(reference||{role:'Research'}),doneLooks:data.returndoneLooks||reference?.doneLooks,
     obstacle:data.returnobstacle||reference?.obstacle,response:data.returnresponse||reference?.response,
     previousPlanDate:planDate?'':data.date,lastTouched:today(),
-    returnCue:data.cue,milestone:reference?.milestone||'',project:reference?.project||'',paper:data.returnPaper??reference?.paper??'',parent:reference?.id||'',pilotId:reference?.pilotId||''};
+    returnCue:data.cue,milestone:reference?.milestone||'',project:reference?.project||'',section:reference?.section,paper:data.returnPaper??reference?.paper??'',parent:reference?.id||'',pilotId:reference?.pilotId||''};
   ensureSlot(next,planDate);
   state.tasks.push(next);
   return next;
@@ -615,7 +615,7 @@ async function supportSubmit(method, target, data) {
   } else if(method==='friction'){
     if(!entry||entry.archivedAt||entry.status==='Done') throw Error('Choose an open task.');
     const date=today();
-    const step={id:id(),title:data.smallStep,minutes:5,role:roleOfTask(entry),status:'Next',milestone:entry.milestone,project:entry.project,paper:entry.paper,
+    const step={id:id(),title:data.smallStep,minutes:5,role:roleOfTask(entry),status:'Next',milestone:entry.milestone,project:entry.project,section:entry.section,paper:entry.paper,
       planDate:date,primaryDay:date,parent:entry.id,fiveMinute:true,pilotId:entry.pilotId||'',lastTouched:date,
       planKind:data.planKind,doneLooks:data.doneLooks,obstacle:data.obstacle,response:data.response,
       date:entry.date,reviewedDue:entry.date<today()?entry.date:''};
