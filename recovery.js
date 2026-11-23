@@ -65,7 +65,7 @@ async function getRecoveryOptions() {
       if(copy?.raw) found.push({...copy,label});
     }
     try{
-      for(const key of Object.keys(localStorage)){
+      for(const key of window.quodAccount?[]:Object.keys(localStorage)){
         if(!/^fieldnote\.phd\.v1(?:\.pilot\.\d{4}-\d{2}-\d{2})?$/.test(key)) continue;
         const raw=localStorage.getItem(key);
         if(raw) found.push({key,label:key.includes('.pilot.')?'Earlier pilot '+key.slice(-10):'Earlier Quod workspace on this site',raw});

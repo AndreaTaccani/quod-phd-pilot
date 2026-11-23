@@ -1,0 +1,18 @@
+{
+  "name": "quod-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node accounts/build.mjs",
+    "test": "node --test accounts/test/database.test.mjs",
+    "test:browser": "node accounts/test/browser.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.119.2"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.6.0",
+    "playwright-core": "1.56.1"
+  }
+}

@@ -1,0 +1,13 @@
+.account-gate{min-height:100svh;display:grid;place-items:center;padding:1rem;background:var(--bg,#f6f8f5)}
+.account-card,.account-body{padding:clamp(1.4rem,4vw,2.5rem)}
+.account-card{width:min(100%,29rem);background:white;border:1px solid #d7e1d7;border-radius:1rem}
+.account-brand{display:inline-block;margin-bottom:2rem;color:#214638;font:2rem Georgia,serif;text-decoration:none}
+.account-card h1{font-size:clamp(2rem,5vw,2.8rem);line-height:1.1}
+.account-card form{display:grid;gap:1rem;margin-top:1.5rem}
+.account-bar{display:flex;align-items:center;justify-content:flex-end;gap:.75rem;padding:.4rem 1rem;background:#e6eee5;color:#203e32;font-size:.9rem}
+.account-buttons{display:flex;gap:.65rem;flex-wrap:wrap;margin-top:1.2rem}
+#account-dialog{max-width:min(35rem,94vw)}
+.account-body h3{margin-top:1.25rem}
+.account-body p{line-height:1.5;overflow-wrap:anywhere}
+#account-dialog a{text-decoration:underline}
+.account-gate[hidden],.account-bar[hidden],#email-form[hidden],#retry-open[hidden],#conflict-actions[hidden]{display:none}
