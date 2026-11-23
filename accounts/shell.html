@@ -1,0 +1,35 @@
+<section id="account-gate" class="account-gate">
+  <div class="account-card">
+    <a class="account-brand" href="./index.html">Quod</a>
+    <h1 id="gate-heading">Opening your workspace…</h1>
+    <p id="gate-message" role="status"></p>
+    <form id="email-form" hidden>
+      <label class="field">Email address<input required type="email" name="email" autocomplete="email"></label>
+      <p>Signing in saves your workspace, including notes and reflections, to your account. You can download a copy at any time.</p>
+      <button class="btn primary" type="submit">Send sign-in link</button>
+    </form>
+    <button type="button" class="btn secondary" id="retry-open" hidden>Try again</button>
+  </div>
+</section>
+<header class="account-bar" id="account-bar" hidden>
+  <span id="sync-status" role="status">Opening account</span>
+  <button class="btn secondary" id="account-menu" type="button">Account</button>
+</header>
+<dialog id="account-dialog" aria-labelledby="account-title">
+  <div class="account-body"><h2 id="account-title">Your account</h2>
+    <p id="account-email"></p><p id="account-detail" role="status"></p>
+    <div id="conflict-actions" hidden>
+      <p id="version-message"></p>
+      <button type="button" class="btn secondary" id="open-cloud">Download this copy and open cloud version</button>
+    </div>
+    <h3>Bring over your pilot workspace</h3>
+    <p>On the original device, open the <a href="https://andreataccani.github.io/quod-phd-pilot/app.html" target="_blank" rel="noopener">original pilot</a> and choose Settings &amp; export → JSON backup. Import that file here to review it before restoring.</p>
+    <div class="account-buttons">
+      <button class="btn secondary" id="import-backup" type="button">Import pilot backup</button>
+      <button class="btn secondary" id="account-export" type="button">Download current workspace</button>
+      <button class="btn secondary" id="sync-now" type="button">Sync now</button>
+      <button class="btn ghost" id="sign-out" type="button">Sign out</button>
+      <button class="btn primary" id="account-close" type="button">Done</button>
+    </div>
+  </div>
+</dialog>

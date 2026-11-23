@@ -8,7 +8,7 @@ const query=new URLSearchParams(location.search);
 const exampleWorkspace=query.get('demo')==='1';
 const pilotInvite=!exampleWorkspace&&query.get('pilot')==='1';
 const staticPilotHost=Boolean(document.querySelector('meta[name="quod-static-pilot"]'));
-const STORE = (staticPilotHost?'quod.phd-pilot.v1':'fieldnote.phd.v1'+(pilotLaunch?'.pilot.'+pilotLaunch:''))+(exampleWorkspace?'.example':'');
+const STORE = window.quodAccount?.key ?? ((staticPilotHost?'quod.phd-pilot.v1':'fieldnote.phd.v1'+(pilotLaunch?'.pilot.'+pilotLaunch:''))+(exampleWorkspace?'.example':''));
 const roles = ['Research','Teaching','Service','Personal'];
 const taskStages = ['Next','Waiting','Done'];
 const milestoneStages = ['Planned','In progress','Waiting','Done'];
@@ -192,11 +192,15 @@ function save(replace=false){
       notify(storageIssue);return;
     }
     const next=JSON.stringify(state);
-    if(next!==saved) localStorage.setItem(STORE,next);
+    if(next!==saved){
+      localStorage.setItem(STORE,next);
+      window.quodAccount?.onSave();
+    }
     storageRaw=next;stored=true;loadError=false;storageIssue='';starterOnly=false;
     rememberWorkspace(next);
   } catch {
     stored=false;storageIssue='Browser storage is unavailable. Download a backup before closing.';
+    window.quodAccount?.onSaveFailure();
     notify(storageIssue);
   }
 }
@@ -226,7 +230,7 @@ function notify(message) {
 function nav() {
   return '<aside class="sidebar" aria-label="Workspace menu"><button class="brand" type="button" data-action="page" data-value="today"><span class="brand-mark">'+glyph('brand',true)+'</span><span><span class="brand-name">Quod</span><span class="brand-sub">PhD workspace</span></span></button><nav aria-label="Main navigation">'+
     pages.map(([label,links])=>'<div class="nav-group"><p class="nav-label">'+label+'</p>'+links.map(([key,name,icon])=>'<button type="button" class="nav-button'+(active===key?' active':'')+'" data-action="page" data-value="'+key+'"'+(active===key?' aria-current="page"':'')+'>'+glyph(icon)+e(name)+'</button>').join('')+'</div>').join('')+
-    '</nav><div class="sidebar-bottom"><span class="status-dot'+(stored?'':' warn')+'"></span><span>'+ (stored ? 'Private · saved on this device' : 'Changes need a backup')+'</span></div></aside>';
+    '</nav><div class="sidebar-bottom"><span class="status-dot'+(stored?'':' warn')+'"></span><span>'+ (stored ? (window.quodAccount?'Private account':'Private · saved on this device') : 'Changes need a backup')+'</span></div></aside>';
 }
 function header() {
   return '<header class="topbar"><div class="crumb"><button type="button" class="icon-btn menu-toggle" aria-label="Toggle menu" aria-expanded="'+menuOpen+'" data-action="menu">'+glyph('menu')+'</button><span>My workspace</span>'+glyph('chevron')+'<strong>'+e(pageNames[active])+'</strong></div><div class="top-actions"><time class="top-date" datetime="'+today()+'">'+e(displayDate(today(),{weekday:'short',month:'short',day:'numeric'}))+'</time>'+button('Quick add','quick','','primary','plus')+'</div></header>';
@@ -540,7 +544,7 @@ function settingsView() {
     pair(field('Work resumes at','resume',state.settings.resume,{type:'time',required:true}),tick('shieldWeekends','Keep the shield on during weekends',state.settings.shieldWeekends))+
     '<div>'+button('Save preferences','submit','','primary')+'</div></form>')+
     panel('Research work hours',button('Work hours settings','work-hours','','secondary'))+
-    panel('Back up & export',txt('Workspace data stays in this browser. Use a JSON backup to move it to another device, copy, or browser.','muted')+
+    panel('Back up & export',txt(window.quodAccount?'Your account syncs across devices. Download a JSON backup for an independent copy.':'Workspace data stays in this browser. Use a JSON backup to move it to another device, copy, or browser.','muted')+
     '<div class="inline wrap-inline section-gap">'+button('JSON backup','backup','','primary','download')+button('Recover workspace','recover-workspace','','secondary')+button('Restore backup','restore','','secondary')+button('Markdown','markdown-export','','secondary')+
     button('CSV','csv-export','','secondary')+button('BibTeX','bib-export','','secondary')+button('Calendar','calendar-export','','secondary')+button('Academic CV','cv-export','','secondary')+'</div>')+
     panel('Workspace setup',txt('The example opens separately from this workspace.','muted')+'<div class="inline wrap-inline section-gap">'+button('Start blank','reset','blank','secondary')+
@@ -1667,6 +1671,13 @@ window.addEventListener('storage',event=>{
   stored=false;storageIssue='Saved data changed in another tab. Back up work from this tab before loading the saved workspace.';
   render();
 });
+if(window.quodAccount){
+  window.quodImportBackup=()=>fileDialog('restore');
+  window.quodExportCurrent=()=>loadError&&storageRaw!==null?download(exportName('-original.json'),storageRaw,'application/json'):actions.backup();
+  window.quodValidateWorkspace=raw=>validated(JSON.parse(raw));
+  window.quodCloseRecovery=()=>recoveryDb?.then(db=>db.close()).catch(()=>{});
+  window.quodDeviceSaved=()=>stored&&!loadError;
+}
 render();
 if(!loadError&&(!staticPilotHost||exampleWorkspace||storageRaw!==null&&!starterOnly)){save(); if(!stored) render();}
 const offerPilot=()=>{if(pilotInvite&&!modal.open&&!loadError&&!recoveryAvailable&&viewMode==='normal')joinPilotDialog();};
